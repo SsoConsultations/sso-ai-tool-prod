@@ -1,4 +1,3 @@
-# App file last confirmed and saved on July 4, 2025
 import streamlit as st
 import os
 import io
