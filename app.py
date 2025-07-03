@@ -262,9 +262,12 @@ if 'current_admin_page' not in st.session_state:
 # Ensure only one app instance is initialized
 if not firebase_admin._apps:
     try:
-        # Load the Firebase service account key as a dictionary directly from Streamlit secrets
-        # Streamlit's native secrets management handles multi-line strings and newlines.
-        firebase_service_account_info = st.secrets["FIREBASE_SERVICE_ACCOUNT_KEY"] 
+        # Load the Firebase service account key as a string directly from Streamlit secrets
+        # Using "FIREBASE_SERVICE_ACCOUNT_KEY" as per your error message.
+        firebase_service_account_json_string = st.secrets["FIREBASE_SERVICE_ACCOUNT_KEY"]
+
+        # Parse the JSON string into a Python dictionary
+        firebase_service_account_info = json.loads(firebase_service_account_json_string)
 
         cred = credentials.Certificate(firebase_service_account_info)
         firebase_admin.initialize_app(cred) # Use firebase_admin.initialize_app
@@ -275,6 +278,10 @@ if not firebase_admin._apps:
         st.error("Firebase 'FIREBASE_SERVICE_ACCOUNT_KEY' not found in Streamlit secrets! "
                  "Please add your Firebase service account JSON content as a multi-line string "
                  "to your app's secrets on Streamlit Cloud under the key 'FIREBASE_SERVICE_ACCOUNT_KEY'.")
+        st.stop()
+    except json.JSONDecodeError as e:
+        st.error(f"Error parsing Firebase service account JSON: {e}. "
+                 "Please ensure the content of 'FIREBASE_SERVICE_ACCOUNT_KEY' in Streamlit secrets is valid JSON.")
         st.stop()
     except Exception as e:
         st.error(f"An unexpected error occurred during Firebase initialization: {e}")
@@ -287,7 +294,9 @@ else:
 drive_service = None
 try:
     # Load the Google Drive key as a dictionary directly from Streamlit secrets
-    google_drive_key_info = st.secrets["GOOGLE_DRIVE_KEY"]
+    # Using "GOOGLE_DRIVE_KEY" as per the latest secrets.toml format.
+    google_drive_key_json_string = st.secrets["GOOGLE_DRIVE_KEY"]
+    google_drive_key_info = json.loads(google_drive_key_json_string)
 
     # Define the necessary scopes for Google Drive access
     SCOPES = ['https://www.googleapis.com/auth/drive'] # Scope for full Drive access
@@ -303,6 +312,10 @@ except KeyError:
     st.error("Google Drive 'GOOGLE_DRIVE_KEY' not found in Streamlit secrets! "
              "Please add your Google Drive service account JSON content as a multi-line string "
              "to your app's secrets on Streamlit Cloud under the key 'GOOGLE_DRIVE_KEY'.")
+    st.stop()
+except json.JSONDecodeError as e:
+    st.error(f"Error parsing Google Drive key JSON: {e}. "
+             "Please ensure the content of 'GOOGLE_DRIVE_KEY' in Streamlit secrets is valid JSON.")
     st.stop()
 except Exception as e:
     st.error(f"An unexpected error occurred during Google Drive initialization: {e}")
@@ -808,7 +821,7 @@ def main():
                 
                 submit_setup_button = st.form_submit_button("Save Account Details and Re-Login")
 
-                if submit_button:
+                if submit_setup_button:
                     if not new_username:
                         st.warning("Please enter a display name.")
                     elif not new_password:
@@ -831,6 +844,7 @@ def main():
                             st.session_state['username'] = new_username
                             st.session_state['has_set_username'] = True
                             st.session_state['needs_username_setup'] = False # This flag is now done
+
                             st.success(f"Account details updated successfully! Please log in with your new password.")
                             logout_user() # Log out to force re-login with new password
                             
@@ -911,4 +925,3 @@ st.markdown(
 
 if __name__ == "__main__":
     main()
-
