@@ -1,1 +1,17 @@
+streamlit
+openai
+PyPDF2
+pandas
+tqdm
+python-docx
+reportlab
+requests
+langchain
+langchain-community
+bcrypt
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+google-auth
+firebase-admin
 
