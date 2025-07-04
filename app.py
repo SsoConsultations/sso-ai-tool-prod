@@ -493,6 +493,8 @@ def get_openai_response(prompt_text):
             )
             return response.choices[0].message.content
         except Exception as e:
+            # Add a print statement to ensure it goes to console logs
+            print(f"DEBUG: Caught error in get_openai_response: Type={type(e).__name__}, Message={e}")
             st.error(f"Error calling OpenAI API: {e}. Please check your API key and network connection.")
             return "Error: Could not get response from AI."
     else:
