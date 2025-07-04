@@ -575,7 +575,7 @@ def get_candidate_evaluation_data(jd_text, cv_texts, cv_filenames):
             evaluations.append(response)
         else:
             st.warning(f"Could not get structured evaluation for {cv_filenames[i]}: {response.get('error', 'Unknown error')}")
-            evaluations.append({
+            evaluates.append({
                 "CandidateName": cv_filenames[i].replace(".pdf", "").replace(".docx", ""),
                 "MatchPercent": 0,
                 "Ranking": 99,
@@ -717,7 +717,7 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_eva
 
         # Add header row for criteria comparison
         hdr_cells = table.rows[0].cells
-        for i, header_text in enumerate(headers):
+        for i, header_text in enumerate(criteria_headers): # Use criteria_headers here
             hdr_cells[i].text = header_text
             hdr_cells[i].paragraphs[0].runs[0].font.bold = True
             hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -788,24 +788,6 @@ def show_login_and_create_account_forms():
         if submitted:
             login_user(email, password)
 
-    # Removed the entire "Create Account" section as per your request
-    # st.markdown("<h4 style='text-align: center; color: #4CAF50;'>--- OR ---</h4>", unsafe_allow_html=True)
-    # with st.form("create_account_form"):
-    #     st.markdown("<p style='text-align: center;'>Don't have an account? Create one here:</p>", unsafe_allow_html=True)
-    #     new_email = st.text_input("New Email", key="new_email")
-    #     new_password = st.text_input("New Password", type="password", key="new_password")
-    #     confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
-    #     admin_checkbox = st.checkbox("Create as Admin (requires admin approval)", value=False, key="create_admin_checkbox")
-        
-    #     new_account_submitted = st.form_submit_button("Create Account")
-    #     if new_account_submitted:
-    #         if new_password != confirm_password:
-    #             st.error("Passwords do not match.")
-    #         elif len(new_password) < 6:
-    #             st.error("Password must be at least 6 characters long.")
-    #         else:
-    #             create_user(new_email, new_password, admin_checkbox)
-
     if st.button("Back to Role Selection", key="back_to_role_selection_button"):
         st.session_state['login_mode'] = 'choose_role'
         st.rerun()
@@ -844,8 +826,11 @@ def setup_username_and_password_page():
                     st.session_state['username'] = new_username
                     st.session_state['has_set_username'] = True
                     st.session_state['needs_username_setup'] = False # Profile setup complete
-                    st.success("Profile updated successfully! You can now proceed.")
-                    st.rerun()
+                    st.success("Profile updated successfully!")
+                    # --- NEW: Explicitly log out and prompt for re-login ---
+                    st.info("Please log in again with your new password.")
+                    logout_user() # This will rerun and go to choose_role/login page
+                    # --- END NEW ---
                 except exceptions.FirebaseError as e:
                     st.error(f"Error updating profile: {e}")
                 except Exception as e:
@@ -1042,7 +1027,12 @@ def show_all_reports_page():
         st.subheader("Actions on Reports")
         
         # Allow users to select a report from the displayed list
-        selected_report_id = st.selectbox("Select a report to view/download:", options=[r['id'] for r in reports], format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}", key="report_selector")
+        selected_report_id = st.selectbox(
+            "Select a report to view/download:",
+            options=[r['id'] for r in reports], 
+            format_func=lambda x: f"Report {next((r['timestamp'] for r in reports if r['id'] == x), 'N/A')} - {next((r['jd_filename'] for r in reports if r['id'] == x), 'N/A')}", 
+            key="report_selector"
+        )
         
         selected_report = next((r for r in reports if r['id'] == selected_report_id), None)
 
@@ -1108,7 +1098,34 @@ def manage_users_page():
     st.markdown("<h1 style='text-align: center; color: #4CAF50;'>SSO Consultants AI Recruitment Tool</h1>", unsafe_allow_html=True)
     st.subheader("Manage Users")
 
-    st.write("Here you can view, activate/deactivate, and delete user accounts.")
+    # --- Invite New Member Section ---
+    st.markdown("---")
+    st.subheader("Invite New Member")
+    with st.form("invite_new_member_form"):
+        new_member_email = st.text_input("New Member's Email", key="invite_email")
+        temp_password = st.text_input("Temporary Password", type="password", key="invite_temp_password")
+        is_admin_invite = st.checkbox("Grant Admin Privileges", key="invite_is_admin_checkbox")
+        
+        confirm_admin_invite = True # Default to True if not admin invite
+        if is_admin_invite:
+            st.warning("Warning: Granting admin privileges provides full access to user management and report generation, including deleting reports and users.")
+            confirm_admin_invite = st.checkbox("I understand and confirm to grant admin privileges to this user.", key="confirm_admin_privileges")
+        
+        submit_invite = st.form_submit_button("Invite Member")
+
+        if submit_invite:
+            if not new_member_email or not temp_password:
+                st.error("Email and Temporary Password are required.")
+            elif len(temp_password) < 6:
+                st.error("Temporary Password must be at least 6 characters long.")
+            elif is_admin_invite and not confirm_admin_invite:
+                st.error("Please confirm granting admin privileges.")
+            else:
+                create_user(new_member_email, temp_password, is_admin_invite)
+                st.rerun() # Refresh page to show updated user list and clear form
+
+    st.markdown("---")
+    st.write("Here you can view, activate/deactivate, and delete existing user accounts.")
 
     users_ref = db.collection('users')
     try:
@@ -1116,17 +1133,26 @@ def manage_users_page():
         users = []
         for doc in users_docs:
             user_data = doc.to_dict()
+            try:
+                firebase_user = auth.get_user(doc.id) # Fetch current status from Firebase Auth
+                disabled_status = firebase_user.disabled
+            except Exception:
+                disabled_status = True # Assume disabled if user not found in Auth (e.g., deleted manually)
+
             users.append({
                 'uid': doc.id,
                 'email': user_data.get('email', 'N/A'),
                 'username': user_data.get('username', 'Not Set'),
                 'is_admin': user_data.get('is_admin', False),
-                'disabled': auth.get_user(doc.id).disabled # Get disabled status from Firebase Auth
+                'disabled': disabled_status
             })
         
+        # Filter out the current logged-in admin from the list of selectable users
+        display_users = [u for u in users if u['uid'] != st.session_state['user_uid']]
+
         st.dataframe(
-            users,
-            column_order=["email", "username", "is_admin", "disabled", "uid"],
+            display_users,
+            column_order=["email", "username", "is_admin", "disabled"],
             hide_index=True,
             column_config={
                 "uid": None, # Hide UID in table
@@ -1141,10 +1167,9 @@ def manage_users_page():
         st.markdown("---")
         st.subheader("Actions on Users")
 
-        selected_user_email = st.selectbox("Select a user:", options=[u['email'] for u in users if u['email'] != st.session_state['user_email']], key="user_selector")
-        
-        if selected_user_email:
-            selected_user = next((u for u in users if u['email'] == selected_user_email), None)
+        if display_users:
+            selected_user_email = st.selectbox("Select a user to manage:", options=[u['email'] for u in display_users], key="user_selector")
+            selected_user = next((u for u in display_users if u['email'] == selected_user_email), None)
             
             if selected_user:
                 st.write(f"**Selected User:** {selected_user['username']} ({selected_user['email']})")
@@ -1169,8 +1194,9 @@ def manage_users_page():
                         st.error(f"Error toggling account status: {e}")
 
                 if st.button("Delete User", key=f"delete_user_{selected_user['uid']}"):
-                    if st.warning(f"Are you sure you want to delete {selected_user_email}? This cannot be undone."):
-                        if st.button("Confirm Delete", key=f"confirm_delete_{selected_user['uid']}"):
+                    # Added a confirmation step for deletion
+                    if st.warning(f"Are you absolutely sure you want to delete {selected_user_email}? This action is irreversible."):
+                        if st.button("Confirm Deletion", key=f"confirm_delete_{selected_user['uid']}"):
                             try:
                                 # Delete from Firebase Auth
                                 auth.delete_user(selected_user['uid'])
@@ -1184,6 +1210,8 @@ def manage_users_page():
                                 st.error(f"An unexpected error occurred: {e}")
             else:
                 st.info("Select a user from the dropdown to manage.")
+        else:
+            st.info("No other users to manage. You are the only admin.")
 
     except Exception as e:
         st.error(f"Error fetching users: {e}")
