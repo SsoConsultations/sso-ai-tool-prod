@@ -546,9 +546,13 @@ def get_candidate_evaluation_data(jd_text, cv_texts, cv_filenames):
             st.warning(f"Could not get structured evaluation for {cv_filenames[i]}: {response.get('error', 'Unknown error')}")
             evaluations.append({
                 "CandidateName": cv_filenames[i].replace(".pdf", "").replace(".docx", ""),
-                "MatchPercent": 0, "Ranking": 99, "ShortlistProbability": "Low",
-                "KeyStrengths": "AI analysis failed.", "KeyGaps": "AI analysis failed.",
-                "LocationSuitability": "Unknown", "Comments": "Failed to generate AI analysis."
+                "MatchPercent": 0,
+                "Ranking": 99,
+                "ShortlistProbability": "Low",
+                "KeyStrengths": "AI analysis failed.",
+                "KeyGaps": "AI analysis failed.",
+                "LocationSuitability": "Unknown",
+                "Comments": "Failed to generate AI analysis."
             })
     
     # After getting individual evaluations, re-rank them globally based on MatchPercent
@@ -576,9 +580,7 @@ def get_criteria_comparison_data(jd_text, cv_texts, cv_filenames, criteria_list)
     - ✅ for strong match/presence
     - ⚠️ for partial match/some presence/needs consideration
     - ❌ for no match/significant gap
-
-    Output should be a JSON object where keys are the criteria and values are objects
-    containing candidate names as keys and their emoji ratings as values.
+    Output should be a JSON object where keys are the criteria and values are objects containing candidate names as keys and their emoji ratings as values.
 
     Job Description:
     {jd_text}
@@ -598,11 +600,10 @@ def get_criteria_comparison_data(jd_text, cv_texts, cv_filenames, criteria_list)
         st.warning(f"Could not get structured criteria comparison: {response.get('error', 'Unknown error')}")
         return {criterion: {filename.replace('.pdf','').replace('.docx',''): "❌" for filename in cv_filenames} for criterion in criteria_list} # Fallback
 
-
 def get_general_observations_and_shortlist(evaluations):
     # Sort candidates by ranking to feed into the prompt correctly
     sorted_candidates = sorted(evaluations, key=lambda x: x.get('Ranking', 99))
-    
+
     prompt = "Based on the following candidate evaluations, provide:\n"
     prompt += "1. General Observations: An overall summary of the candidate pool, highlighting top candidates and general trends.\n"
     prompt += "2. Final Shortlist Recommendation: A list of names of candidates recommended for shortlisting, based primarily on 'High' or 'Moderate' shortlist probability and ranking.\n\n"
@@ -623,6 +624,7 @@ def get_general_observations_and_shortlist(evaluations):
 # --- Report Generation Function (MODIFIED FOR NEW FORMAT) ---
 def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_evaluations, criteria_comparison_data, general_and_shortlist_data):
     document = Document()
+
     document.add_heading('JD-CV Comparative Analysis Report', level=1)
     
     # Add a paragraph for general info
@@ -630,7 +632,7 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_eva
     document.add_paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     document.add_paragraph(f"Job Description: {report_data.get('jd_filename', 'N/A')}")
     document.add_paragraph(f"Candidates: {', '.join(report_data.get('cv_filenames', ['N/A']))}")
-
+    
     document.add_page_break()
 
     # --- Candidate Evaluation Table ---
@@ -641,6 +643,8 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_eva
         headers = ["Candidate Name", "Match %", "Ranking", "Shortlist Probability", "Key Strengths", "Key Gaps", "Location Suitability", "Comments"]
         table = document.add_table(rows=1, cols=len(headers))
         table.style = 'Table Grid'
+
+        # Add header row
         hdr_cells = table.rows[0].cells
         for i, header_text in enumerate(headers):
             hdr_cells[i].text = header_text
@@ -648,6 +652,7 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_eva
             hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
+        # Add data rows
         for candidate in candidate_evaluations:
             row_cells = table.add_row().cells
             row_cells[0].text = candidate.get('CandidateName', 'N/A')
@@ -658,567 +663,561 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_eva
             row_cells[5].text = candidate.get('KeyGaps', 'N/A')
             row_cells[6].text = candidate.get('LocationSuitability', 'N/A')
             row_cells[7].text = candidate.get('Comments', 'N/A')
-            
-            for cell in row_cells:
-                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
     else:
-        document.add_paragraph("No candidate evaluation data could be generated.")
+        document.add_paragraph("No candidate evaluation data available.")
 
-    document.add_paragraph('\n')
     document.add_page_break()
 
-    # --- Additional Observations (Criteria Comparison) ---
+    # --- Criteria Comparison Table ---
     document.add_heading('✅ Additional Observations (Criteria Comparison)', level=2)
-    document.add_paragraph('Detailed assessment of each candidate against the Job Description:')
 
-    # Define common criteria for comparison based on the example and general BA roles
-    criteria_list = [
-        "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
-        "Location Suitability", "Technical Skills", "Soft Skills"
-    ]
-
-    if criteria_comparison_data:
-        # Prepare header: Criteria + all candidate names
-        table_headers = ["Criteria"] + [cand.get('CandidateName', f"Candidate {i+1}") for i, cand in enumerate(candidate_evaluations)]
-        table = document.add_table(rows=1, cols=len(table_headers))
+    if criteria_comparison_data and candidate_evaluations:
+        # Get all unique candidate names from evaluations to ensure consistent column order
+        candidate_names_ordered = [cand['CandidateName'] for cand in candidate_evaluations]
+        
+        # Prepare headers: "Criteria" + all candidate names
+        criteria_headers = ["Criteria"] + candidate_names_ordered
+        
+        # Determine number of rows (number of criteria)
+        num_criteria = len(criteria_comparison_data)
+        
+        table = document.add_table(rows=num_criteria + 1, cols=len(criteria_headers))
         table.style = 'Table Grid'
+
+        # Add header row for criteria comparison
         hdr_cells = table.rows[0].cells
-        for i, header_text in enumerate(table_headers):
+        for i, header_text in enumerate(criteria_headers):
             hdr_cells[i].text = header_text
             hdr_cells[i].paragraphs[0].runs[0].font.bold = True
             hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        
+        # Add data rows
+        row_idx = 1
+        for criteria, candidate_ratings in criteria_comparison_data.items():
+            row_cells = table.rows[row_idx].cells
+            row_cells[0].text = criteria # First cell is the criterion name
+            row_cells[0].paragraphs[0].runs[0].font.bold = True # Bold the criterion name
 
-        for criterion in criteria_list:
-            row_cells = table.add_row().cells
-            row_cells[0].text = criterion # Criterion name
-            row_cells[0].paragraphs[0].runs[0].font.bold = True
-
-            for i, candidate in enumerate(candidate_evaluations):
-                candidate_name_for_key = candidate.get('CandidateName') # Use the name as returned by AI
-                rating = criteria_comparison_data.get(criterion, {}).get(candidate_name_for_key, '❌') # Default to ❌
-                
-                # Apply color based on emoji/rating
-                cell = row_cells[i + 1]
-                cell.text = rating
-                
-                # Set font color if possible (requires docx.oxml.ns qn)
-                if rating == '✅':
-                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(0x00, 0x80, 0x00) # Green
-                elif rating == '⚠️':
-                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(0xFF, 0xA5, 0x00) # Orange
-                elif rating == '❌':
-                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(0xFF, 0x00, 0x00) # Red
-
-                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            for col_idx, cand_name in enumerate(candidate_names_ordered):
+                # Use .get() with a default for robustness
+                emoji = candidate_ratings.get(cand_name, 'N/A')
+                row_cells[col_idx + 1].text = emoji # +1 because first col is 'Criteria'
+                row_cells[col_idx + 1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # Center emojis
+            row_idx += 1
     else:
-        document.add_paragraph("No criteria comparison data could be generated.")
+        document.add_paragraph("No criteria comparison data available.")
 
-    document.add_paragraph('\n')
     document.add_page_break()
 
-    # --- General Observations and Final Shortlist ---
+    # --- General Observations and Shortlist ---
     document.add_heading('General Observations', level=2)
-    document.add_paragraph(general_and_shortlist_data.get('GeneralObservations', ''))
+    document.add_paragraph(general_and_shortlist_data.get('GeneralObservations', 'No general observations available.'))
 
-    document.add_paragraph('\n')
     document.add_heading('📌 Final Shortlist Recommendation', level=2)
-    shortlisted = general_and_shortlist_data.get('ShortlistedCandidates', [])
-    if shortlisted:
-        for name in shortlisted:
-            document.add_paragraph(f"• {name}", style='List Bullet')
+    if general_and_shortlist_data.get('ShortlistedCandidates'):
+        document.add_paragraph(f"Shortlisted candidates: {', '.join(general_and_shortlist_data.get('ShortlistedCandidates'))}")
     else:
-        document.add_paragraph("No candidates recommended for shortlist based on current criteria.")
+        document.add_paragraph("No candidates recommended for shortlist based on current analysis.")
 
-    # Save to buffer
-    docx_buffer = io.BytesIO()
-    document.save(docx_buffer)
-    docx_buffer.seek(0)
-    return docx_buffer
+    # Save the document to a BytesIO object
+    buffer = io.BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+    return buffer
 
-# --- NEW: HTML Preview Generation Functions ---
-# Function to generate HTML for the candidate evaluation table
-def generate_candidate_evaluation_html(candidate_evaluations):
-    html = "<h3 style='color:#4CAF50;'>🧾 Candidate Evaluation Table</h3>"
-    html += "<p>Detailed assessment of each candidate against the Job Description:</p>"
-    if not candidate_evaluations:
-        html += "<p>No candidate evaluation data could be generated for preview.</p>"
-        return html
+# --- Pages/UI Functions ---
 
-    html += "<table style='width:100%; border-collapse: collapse; border: 1px solid #ddd;'>"
-    html += "<tr style='background-color:#f2f2f2;'>"
-    headers = ["Candidate Name", "Match %", "Ranking", "Shortlist Probability", "Key Strengths", "Key Gaps", "Location Suitability", "Comments"]
-    for header in headers:
-        html += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #4CAF50; color: white;'>{header}</th>"
-    html += "</tr>"
+def display_login_form():
+    st.image("sso_logo.png", width=100)
+    st.markdown("<h2 style='text-align: center; color: #4CAF50;'>Welcome!</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Please choose your login type.</p>", unsafe_allow_html=True)
 
-    for candidate in candidate_evaluations:
-        html += "<tr>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('CandidateName', 'N/A')}</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('MatchPercent', 0)}%</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('Ranking', 'N/A')}</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('ShortlistProbability', 'N/A')}</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('KeyStrengths', 'N/A')}</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('KeyGaps', 'N/A')}</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('LocationSuitability', 'N/A')}</td>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('Comments', 'N/A')}</td>"
-        html += "</tr>"
-    html += "</table>"
-    return html
-
-# Function to generate HTML for the criteria comparison table
-def generate_criteria_comparison_html(criteria_comparison_data, criteria_list, candidate_evaluations):
-    html = "<h3 style='color:#4CAF50;'>✅ Additional Observations (Criteria Comparison)</h3>"
-    html += "<p>Detailed assessment of each candidate against key criteria:</p>"
-    if not criteria_comparison_data:
-        html += "<p>No criteria comparison data could be generated for preview.</p>"
-        return html
-
-    html += "<table style='width:100%; border-collapse: collapse; border: 1px solid #ddd;'>"
-    html += "<tr style='background-color:#f2f2f2;'>"
-    html += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #4CAF50; color: white;'>Criteria</th>"
-    for candidate in candidate_evaluations:
-        html += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #4CAF50; color: white;'>{candidate.get('CandidateName', 'N/A')}</th>"
-    html += "</tr>"
-
-    for criterion in criteria_list:
-        html += "<tr>"
-        html += f"<td style='border: 1px solid #ddd; padding: 8px; font-weight: bold;'>{criterion}</td>"
-        for candidate in candidate_evaluations:
-            candidate_name_for_key = candidate.get('CandidateName')
-            rating = criteria_comparison_data.get(criterion, {}).get(candidate_name_for_key, '❌')
-            color = 'black'
-            if rating == '✅':
-                color = 'green'
-            elif rating == '⚠️':
-                color = 'orange'
-            elif rating == '❌':
-                color = 'red'
-            html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center; color: {color};'>{rating}</td>"
-        html += "</tr>"
-    html += "</table>"
-    return html
-
-# Function to generate HTML for general observations and shortlist
-def generate_general_observations_html(general_and_shortlist_data):
-    html = "<h3 style='color:#4CAF50;'>General Observations</h3>"
-    html += f"<p>{general_and_shortlist_data.get('GeneralObservations', 'No general observations could be generated.')}</p>"
-    
-    html += "<h3 style='color:#4CAF50;'>📌 Final Shortlist Recommendation</h3>"
-    shortlisted = general_and_shortlist_data.get('ShortlistedCandidates', [])
-    if shortlisted:
-        html += "<ul>"
-        for name in shortlisted:
-            html += f"<li>{name}</li>"
-        html += "</ul>"
-    else:
-        html += "<p>No candidates recommended for shortlist based on current criteria.</p>"
-    return html
-
-# The main function to display the entire report preview
-def display_report_preview_html(candidate_evaluations, criteria_comparison_data, general_and_shortlist_data):
-    st.markdown("---")
-    st.subheader("Report Preview (HTML)")
-    st.info("This preview shows the content of the report. The final downloaded DOCX will have specific formatting.", icon="✨")
-
-    # Display candidate evaluation
-    st.markdown(generate_candidate_evaluation_html(candidate_evaluations), unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True) # Spacer
-    
-    # Define criteria list for HTML preview (must match what's used for DOCX/AI)
-    criteria_list_for_html = [
-        "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
-        "Location Suitability", "Technical Skills", "Soft Skills"
-    ]
-    # Display criteria comparison
-    st.markdown(generate_criteria_comparison_html(criteria_comparison_data, criteria_list_for_html, candidate_evaluations), unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True) # Spacer
-
-    # Display general observations and shortlist
-    st.markdown(generate_general_observations_html(general_and_shortlist_data), unsafe_allow_html=True)
-    st.markdown("---")
-
-
-# --- Streamlit Pages/Components ---
-
-def choose_login_type_page():
-    st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-    st.image("sso_logo.png", width=150)
-    st.title("SSO Consultants")
-    st.subheader("AI Recruitment Tool")
-    st.markdown("---")
-    st.markdown("### Choose Login Type")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("Login as User", key="user_login_button"): # Removed use_container_width
+    col_user, col_admin = st.columns(2)
+    with col_user:
+        if st.button("Login as User", key="user_role_button"):
             st.session_state['login_mode'] = 'login_form'
             st.session_state['is_admin_attempt'] = False
             st.rerun()
-    with col2:
-        if st.button("Login as Admin", key="admin_login_button"): # Removed use_container_width
+    with col_admin:
+        if st.button("Login as Admin", key="admin_role_button"):
             st.session_state['login_mode'] = 'login_form'
             st.session_state['is_admin_attempt'] = True
             st.rerun()
+
+def show_login_and_create_account_forms():
+    st.image("sso_logo.png", width=100) # Logo on login page
+    st.markdown(f"<h2 style='text-align: center; color: #4CAF50;'>Login {'(Admin)' if st.session_state.get('is_admin_attempt') else '(User)'}</h2>", unsafe_allow_html=True)
     
-    st.markdown("</div>", unsafe_allow_html=True)
+    with st.form("login_form"):
+        st.markdown("<p style='text-align: center;'>Already have an account? Log in here:</p>", unsafe_allow_html=True)
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_password")
+        submitted = st.form_submit_button("Login")
+        if submitted:
+            login_user(email, password)
 
+    st.markdown("<h4 style='text-align: center; color: #4CAF50;'>--- OR ---</h4>", unsafe_allow_html=True)
 
-def display_login_page():
-    st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-    st.image("sso_logo.png", width=150)
-    st.title("SSO Consultants")
-    st.subheader("AI Recruitment Tool")
-    st.markdown("---")
-
-    login_title = "Admin Login" if st.session_state['is_admin_attempt'] else "User Login"
-    st.markdown(f"### Please Log In as {login_title}")
-
-    with st.form(key='login_form_main'):
-        email = st.text_input("Email", key='email_input_login')
-        password = st.text_input("Password", type="password", key='password_input_login')
-        submit_button = st.form_submit_button(label='Log In')
-
-        if submit_button:
-            if email and password:
-                login_user(email, password)
+    with st.form("create_account_form"):
+        st.markdown("<p style='text-align: center;'>Don't have an account? Create one here:</p>", unsafe_allow_html=True)
+        new_email = st.text_input("New Email", key="new_email")
+        new_password = st.text_input("New Password", type="password", key="new_password")
+        confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
+        admin_checkbox = st.checkbox("Create as Admin (requires admin approval)", value=False, key="create_admin_checkbox")
+        
+        new_account_submitted = st.form_submit_button("Create Account")
+        if new_account_submitted:
+            if new_password != confirm_password:
+                st.error("Passwords do not match.")
+            elif len(new_password) < 6:
+                st.error("Password must be at least 6 characters long.")
             else:
-                st.warning("Please enter both email and password.")
-    
-    # Back button to choose role
-    if st.button("Back to Login Choices", key="back_to_role_selection"):
+                create_user(new_email, new_password, admin_checkbox)
+
+    if st.button("Back to Role Selection", key="back_to_role_selection_button"):
         st.session_state['login_mode'] = 'choose_role'
-        st.session_state['is_admin_attempt'] = False # Reset this flag
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
+def setup_username_and_password_page():
+    st.image("sso_logo.png", width=100)
+    st.markdown("<h2 style='text-align: center; color: #4CAF50;'>Complete Your Profile</h2>", unsafe_allow_html=True)
+    st.write("Welcome! Please set a display name and your new password.")
 
+    with st.form("username_setup_form"):
+        new_username = st.text_input("Display Name (e.g., Your Name)", value=st.session_state.get('username', ''), key="setup_username")
+        new_password = st.text_input("New Password", type="password", key="setup_new_password")
+        confirm_password = st.text_input("Confirm New Password", type="password", key="setup_confirm_password")
+        
+        submitted = st.form_submit_button("Save Profile")
+
+        if submitted:
+            if not new_username:
+                st.error("Display Name cannot be empty.")
+            elif new_password != confirm_password:
+                st.error("Passwords do not match.")
+            elif len(new_password) < 6:
+                st.error("Password must be at least 6 characters long.")
+            else:
+                try:
+                    # Update password in Firebase Auth
+                    auth.update_user(st.session_state['user_uid'], password=new_password)
+                    
+                    # Update username and hashed password in Firestore
+                    user_doc_ref = db.collection('users').document(st.session_state['user_uid'])
+                    user_doc_ref.update({
+                        'username': new_username,
+                        'hashed_password': hash_password(new_password),
+                        'has_set_username': True
+                    })
+                    st.session_state['username'] = new_username
+                    st.session_state['has_set_username'] = True
+                    st.session_state['needs_username_setup'] = False # Profile setup complete
+                    st.success("Profile updated successfully! You can now proceed.")
+                    st.rerun()
+                except exceptions.FirebaseError as e:
+                    st.error(f"Error updating profile: {e}")
+                except Exception as e:
+                    st.error(f"An unexpected error occurred: {e}")
 
 def generate_comparative_report_page():
-    st.subheader("Generate Comparative Report")
-    
-    st.info("Upload a Job Description (JD) and one or more Candidate CVs (PDF or DOCX) to get a comparative analysis.", icon="ℹ️")
+    # Centered Title (Replaced st.title with markdown for more control)
+    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>SSO Consultants AI Recruitment Tool</h1>", unsafe_allow_html=True)
 
-    # MODIFIED: Wrapped file uploaders in a custom left-aligned div
-    st.markdown("<div class='left-aligned-content'>", unsafe_allow_html=True) 
-    jd_file = st.file_uploader("Upload Job Description (PDF or DOCX)", type=["pdf", "docx"], key="jd_uploader")
-    cv_files = st.file_uploader("Upload Candidate CVs (PDF or DOCX) - Multiple Allowed", type=["pdf", "docx"], accept_multiple_files=True, key="cv_uploader")
-    st.markdown("</div>", unsafe_allow_html=True) # Close the custom div
+    st.write(f"Logged in as: **{st.session_state.get('username', st.session_state.get('user_email', 'Guest'))}** {'(Admin)' if st.session_state['is_admin'] else ''}")
+    st.subheader("Generate Comparative Analysis Report")
 
-    if st.button("Generate Comparative Report", key="generate_report_button"):
+    st.write("Upload a Job Description (JD) and multiple Candidate CVs to generate a comparative analysis report.")
+
+    jd_file = st.file_uploader("Upload Job Description (PDF/DOCX)", type=["pdf", "docx"], key="jd_uploader")
+    cv_files = st.file_uploader("Upload Candidate CVs (PDF/DOCX)", type=["pdf", "docx"], accept_multiple_files=True, key="cv_uploader")
+
+    # Define the list of criteria for comparison
+    comparison_criteria = [
+        "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
+        "Location Suitability", "Technical Skills", "Soft Skills"
+    ]
+
+    with st.expander("AI Report Generation Settings"):
+        st.write("Customize the criteria the AI will use for comparison.")
+        selected_criteria = []
+        for criterion in comparison_criteria:
+            if st.checkbox(criterion, value=True, key=f"criterion_{criterion.replace(' ', '_')}"):
+                selected_criteria.append(criterion)
+        
+        if not selected_criteria:
+            st.warning("Please select at least one criterion for comparison.")
+            return # Prevent generation if no criteria are selected
+
+    if st.button("Generate Report", key="generate_report_button"):
         if jd_file and cv_files:
-            with st.spinner("Analyzing documents and generating report... This may take a moment."):
+            with st.spinner("Analyzing documents and generating report... This may take a few moments."):
                 jd_text = ""
                 if jd_file.type == "application/pdf":
                     jd_text = get_pdf_text(jd_file)
                 elif jd_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                     jd_text = get_docx_text(jd_file)
-                
+                else:
+                    st.error("Unsupported JD file type.")
+                    return
+
                 cv_texts = []
+                cv_filenames = []
                 for cv_file in cv_files:
+                    cv_filenames.append(cv_file.name)
                     if cv_file.type == "application/pdf":
                         cv_texts.append(get_pdf_text(cv_file))
                     elif cv_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                         cv_texts.append(get_docx_text(cv_file))
+                    else:
+                        st.warning(f"Skipping unsupported CV file type: {cv_file.name}")
+                        continue
                 
-                if not jd_text:
-                    st.error("Could not extract text from Job Description. Please ensure it's a valid PDF/DOCX.")
-                    return
                 if not cv_texts:
-                    st.error("Could not extract text from any CVs. Please ensure they are valid PDF/DOCX.")
+                    st.error("No supported CV files found to analyze.")
                     return
 
-                # --- Perform all AI analysis first ---
-                # Define criteria list for comparison
-                criteria_list = [
-                    "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
-                    "Location Suitability", "Technical Skills", "Soft Skills"
-                ]
-                
-                candidate_evaluations = get_candidate_evaluation_data(jd_text, cv_texts, [cv.name for cv in cv_files])
-                criteria_comparison_data = get_criteria_comparison_data(jd_text, cv_texts, [cv.name for cv in cv_files], criteria_list)
-                general_and_shortlist_data = get_general_observations_and_shortlist(candidate_evaluations)
+                # Step 1: Get individual candidate evaluations
+                st.info("Step 1/3: Evaluating individual candidates...")
+                candidate_evaluations = get_candidate_evaluation_data(jd_text, cv_texts, cv_filenames)
+                if any("Error: Could not get response from AI." in str(c.values()) for c in candidate_evaluations):
+                    st.error("Failed to get complete candidate evaluations from AI. Report generation aborted.")
+                    return
 
-                # Prepare report data for both generation and saving
+                # Step 2: Get criteria comparison data
+                st.info("Step 2/3: Comparing candidates based on selected criteria...")
+                criteria_comparison_data = get_criteria_comparison_data(jd_text, cv_texts, cv_filenames, selected_criteria)
+                if any("error" in str(criteria_comparison_data.values()) for c in criteria_comparison_data.values()): # Check for errors in inner dicts
+                    st.error("Failed to get criteria comparison from AI. Report generation aborted.")
+                    return
+
+                # Step 3: Get general observations and shortlist
+                st.info("Step 3/3: Generating general observations and shortlist...")
+                general_and_shortlist_data = get_general_observations_and_shortlist(candidate_evaluations)
+                if "error" in general_and_shortlist_data.get('GeneralObservations', '').lower():
+                    st.error("Failed to get general observations/shortlist from AI. Report generation aborted.")
+                    return
+
+                # Prepare report data for DOCX generation and Firestore
                 report_data = {
-                    'report_title': f"Report for {jd_file.name}",
-                    'generated_by_uid': st.session_state['user_uid'],
-                    'generated_by_email': st.session_state['user_email'],
-                    'generated_by_username': st.session_state['username'],
-                    'jd_filename': jd_file.name,
-                    'cv_filenames': [cv.name for cv in cv_files],
+                    "jd_filename": jd_file.name,
+                    "cv_filenames": cv_filenames,
+                    "generated_by_email": st.session_state['user_email'],
+                    "generated_by_username": st.session_state['username'],
+                    "timestamp": datetime.now().isoformat(), # ISO format for easy sorting in Firestore
+                    "candidate_evaluations": candidate_evaluations,
+                    "criteria_comparison_data": criteria_comparison_data,
+                    "general_and_shortlist_data": general_and_shortlist_data
                 }
 
-                # --- Generate DOCX Report ---
-                docx_buffer = create_comparative_docx_report(
-                    jd_text, cv_texts, report_data, 
+                # Generate the DOCX report
+                report_buffer = create_comparative_docx_report(
+                    jd_text, cv_texts, report_data,
                     candidate_evaluations, criteria_comparison_data, general_and_shortlist_data
                 )
-                
+
                 # Generate unique filename for the report
-                username = report_data.get('generated_by_username', 'UnknownUser') # <--- ADD THIS LINE
+                username = report_data.get('generated_by_username', 'UnknownUser')
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_full_filename = f"{username}_JD_CV_Analysis_Report_{timestamp}.docx" # <-
+                report_full_filename = f"{username}_JD_CV_Analysis_Report_{timestamp}.docx" # MODIFIED LINE
 
-                # --- Display HTML Preview ---
-                display_report_preview_html(candidate_evaluations, criteria_comparison_data, general_and_shortlist_data)
-
-                # --- Save report to Google Drive and Firestore ---
-                if drive_service and GOOGLE_DRIVE_REPORTS_FOLDER_ID:
-                    try:
+                # Upload to Google Drive
+                try:
+                    if drive_service and GOOGLE_DRIVE_REPORTS_FOLDER_ID:
                         file_metadata = {
                             'name': report_full_filename,
-                            'parents': [GOOGLE_DRIVE_REPORTS_FOLDER_ID], # Specify the parent folder ID
+                            'parents': [GOOGLE_DRIVE_REPORTS_FOLDER_ID],
                             'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                         }
-                        
-                        docx_buffer.seek(0) # Ensure buffer is at the beginning for upload
-                        media = MediaIoBaseUpload(docx_buffer,
-                                                  mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                                                  resumable=True)
-                        
-                        uploaded_file = drive_service.files().create(
-                            body=file_metadata,
-                            media_body=media,
-                            fields='id,webViewLink' # Request ID and a viewable link
-                        ).execute()
+                        media = MediaIoBaseUpload(report_buffer, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', resumable=True)
+                        uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                        report_data['drive_file_id'] = uploaded_file.get('id')
+                        st.success(f"Report uploaded to Google Drive: {report_full_filename}")
+                except Exception as e:
+                    st.error(f"Error uploading to Google Drive: {e}. You can still download the report directly.")
+                    report_data['drive_file_id'] = None # Ensure it's marked as failed upload
 
-                        google_drive_file_id = uploaded_file.get('id')
-                        google_drive_view_link = uploaded_file.get('webViewLink')
+                # Save report metadata to Firestore
+                try:
+                    reports_collection = db.collection('reports')
+                    reports_collection.add(report_data)
+                    st.success("Report metadata saved to database.")
+                except Exception as e:
+                    st.error(f"Error saving report metadata to database: {e}")
 
-                        # Save report metadata to Firestore
-                        db.collection('reports').add({
-                            'report_title': report_data.get('report_title', 'JD-CV Comparative Analysis Report'),
-                            'generated_by_uid': st.session_state['user_uid'],
-                            'generated_by_email': st.session_state['user_email'],
-                            'generated_by_username': st.session_state['username'],
-                            'date_generated': firestore.SERVER_TIMESTAMP,
-                            'jd_filename': jd_file.name,
-                            'cv_filenames': [cv_file.name for cv_file in cv_files], # Use original file objects for names
-                            'google_drive_file_id': google_drive_file_id, # Store the Drive file ID
-                            'google_drive_view_link': google_drive_view_link, # Store the direct view link
-                            'google_drive_folder_link': f"https://drive.google.com/drive/folders/{GOOGLE_DRIVE_REPORTS_FOLDER_ID}" # Link to the parent folder
-                        })
-                        st.success("Report saved to Google Drive and ready for download/view!")
-                        docx_buffer.seek(0) # Reset buffer again for local download button
+                st.success("Report generated and saved!")
 
-                    except Exception as e:
-                        st.error(f"Error saving report to Google Drive: {e}")
-                        st.warning("Report was generated but could not be saved to Google Drive. You can still download it locally.")
-                else:
-                    st.warning("Google Drive service not initialized or folder ID missing. Report not saved to cloud.")
-
-                # Always provide local download option
+                # Provide download link
                 st.download_button(
-                    label="Download Report Locally",
-                    data=docx_buffer,
+                    label="Download Report",
+                    data=report_buffer.getvalue(), # Use getvalue() after seeking to 0
                     file_name=report_full_filename,
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    key="download_report_button"
+                    key="download_button"
                 )
         else:
-            st.warning("Please upload a Job Description and at least one CV to generate a report.")
-
-def manage_users_page():
-    st.subheader("Manage Users")
-
-    # Display existing users
-    st.markdown("### Existing Users")
-    users_ref = db.collection('users').stream()
-    users_data = []
-    for user_doc in users_ref:
-        user = user_doc.to_dict()
-        users_data.append({
-            "UID": user_doc.id,
-            "Email": user.get('email', 'N/A'),
-            "Username": user.get('username', 'Not Set'),
-            "Admin": "Yes" if user.get('is_admin') else "No",
-            "Created At": user.get('created_at').strftime('%Y-%m-%d %H:%M') if user.get('created_at') else 'N/A'
-        })
-
-    if users_data:
-        # CORRECTED LINE: Create DataFrame first, then pass it to st.dataframe()
-        users_df = pd.DataFrame(users_data)
-        st.dataframe(users_df, use_container_width=True) # Apply use_container_width here
-    else:
-        st.info("No users found.")
-
-    st.markdown("### Add New User")
-    with st.form("add_user_form"):
-        new_user_email = st.text_input("New User Email")
-        new_user_password = st.text_input("Initial Password for New User", type="password")
-        is_new_user_admin = st.checkbox("Grant Admin Privileges to New User?")
-
-        proceed_with_creation = True
-        if is_new_user_admin:
-            st.warning("You are about to grant this user administrator privileges. This will give them full access to manage users, generate reports, and view all data. Please confirm this action.", icon="⚠️")
-            confirm_admin_grant = st.checkbox("I understand and confirm to grant admin privileges", key="confirm_admin_grant")
-            if not confirm_admin_grant:
-                proceed_with_creation = False
-
-        add_user_button = st.form_submit_button("Add User")
-
-        if add_user_button:
-            if new_user_email and new_user_password:
-                if proceed_with_creation: # Only proceed if confirmed (or not admin user)
-                    create_user(new_user_email, new_user_password, is_new_user_admin)
-                    # The user list will update on the next interaction.
-                else:
-                    if is_new_user_admin: # Display specific warning if admin grant was not confirmed
-                        st.error("Please confirm granting admin privileges to proceed.")
-            else:
-                st.warning("Please enter email and initial password for the new user.")
-
+            st.error("Please upload both a Job Description and at least one CV to generate a report.")
 
 def show_all_reports_page():
+    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>SSO Consultants AI Recruitment Tool</h1>", unsafe_allow_html=True)
     st.subheader("All Generated Reports")
-    
-    # Provide a direct link to the Google Drive reports folder
-    if GOOGLE_DRIVE_REPORTS_FOLDER_ID:
-        st.markdown(
-            f"**All generated reports are stored in the following Google Drive folder:** "
-            f"[View Reports Folder]({f'https://drive.google.com/drive/folders/{GOOGLE_DRIVE_REPORTS_FOLDER_ID}'})",
-            unsafe_allow_html=True
+    st.write(f"Logged in as: **{st.session_state.get('username', st.session_state.get('user_email', 'Guest'))}** {'(Admin)' if st.session_state['is_admin'] else ''}")
+
+    reports_ref = db.collection('reports')
+    if not st.session_state['is_admin']:
+        # Filter reports by the current user's email if not admin
+        reports_query = reports_ref.where('generated_by_email', '==', st.session_state['user_email']).order_by('timestamp', direction=firestore.Query.DESCENDING)
+    else:
+        # Admins can see all reports
+        reports_query = reports_ref.order_by('timestamp', direction=firestore.Query.DESCENDING)
+
+    try:
+        reports_docs = reports_query.stream()
+        reports = []
+        for doc in reports_docs:
+            report_data = doc.to_dict()
+            reports.append({
+                'id': doc.id,
+                'jd_filename': report_data.get('jd_filename', 'N/A'),
+                'cv_filenames': ', '.join(report_data.get('cv_filenames', ['N/A'])),
+                'generated_by_email': report_data.get('generated_by_email', 'N/A'),
+                'generated_by_username': report_data.get('generated_by_username', 'N/A'),
+                'timestamp': datetime.fromisoformat(report_data['timestamp']).strftime('%Y-%m-%d %H:%M:%S') if 'timestamp' in report_data else 'N/A',
+                'drive_file_id': report_data.get('drive_file_id'),
+                'raw_data': report_data # Keep raw data for re-creating report if needed
+            })
+
+        if not reports:
+            st.info("No reports found. Generate one in the 'Generate Report' section.")
+            return
+
+        st.dataframe(
+            reports,
+            column_order=["timestamp", "generated_by_username", "jd_filename", "cv_filenames"],
+            hide_index=True,
+            column_config={
+                "timestamp": st.column_config.DatetimeColumn("Date & Time", format="YYYY-MM-DD HH:mm:ss"),
+                "generated_by_username": "Generated By",
+                "jd_filename": "Job Description",
+                "cv_filenames": "CVs Analyzed",
+                "id": None, # Hide internal ID
+                "drive_file_id": None, # Hide drive ID in table
+                "raw_data": None # Hide raw data in table
+            },
+            use_container_width=True
         )
-    else:
-        st.warning("Google Drive Reports Folder ID is not configured in secrets.")
-    st.write("---") # Separator
 
-    reports_ref = db.collection('reports').order_by('date_generated', direction=firestore.Query.DESCENDING).stream()
-    reports_data = []
-    for report_doc in reports_ref:
-        report = report_doc.to_dict()
+        st.markdown("---")
+        st.subheader("Actions on Reports")
         
-        # Determine the link to use: Google Drive view link
-        download_link = report.get('google_drive_view_link', '#') 
+        # Allow users to select a report from the displayed list
+        selected_report_id = st.selectbox("Select a report to view/download:", options=[r['id'] for r in reports], format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}", key="report_selector")
         
-        reports_data.append({
-            "Title": report.get('report_title', 'N/A'),
-            "Generated By": report.get('generated_by_username', report.get('generated_by_email', 'N/A')),
-            "Date": report.get('date_generated').strftime('%Y-%m-%d %H:%M') if report.get('date_generated') else 'N/A',
-            "JD File": report.get('jd_filename', 'N/A'),
-            "CV Files": ", ".join(report.get('cv_filenames', [])),
-            "Link": f"[View Report]({download_link})" # Display as markdown link
-        })
-    
-    if reports_data:
-        reports_df = pd.DataFrame(reports_data)
-        # Display as HTML to render markdown links
-        st.markdown(reports_df.to_html(escape=False, index=False), unsafe_allow_html=True)
-    else:
-        st.info("No reports found.")
+        selected_report = next((r for r in reports if r['id'] == selected_report_id), None)
 
+        if selected_report:
+            if selected_report['drive_file_id']:
+                # Generate a shareable link from Google Drive file ID
+                drive_link = f"https://drive.google.com/file/d/{selected_report['drive_file_id']}/view?usp=sharing"
+                st.markdown(f"**View/Download on Google Drive:** [Click Here]({drive_link})")
+            else:
+                st.warning("Report not available on Google Drive. It might have failed to upload or was generated before this feature was enabled.")
+            
+            # Option to re-generate and download if drive file is missing or for local access
+            if st.button("Download as DOCX (Re-generate if needed)", key=f"download_report_{selected_report_id}"):
+                with st.spinner("Re-generating report for download..."):
+                    jd_text_for_regen = "" # You might need to fetch this from a stored JD or re-upload
+                    cv_texts_for_regen = [] # Same here
+                    
+                    # For simplicity, we'll use a placeholder for actual content and rely on saved report_data
+                    # In a real app, you'd retrieve JD/CV content from storage or re-process.
+                    # For now, we'll just reconstruct the DOCX based on the saved report_data
+                    report_buffer_regen = create_comparative_docx_report(
+                        "Job Description text placeholder", # This text is not used in create_comparative_docx_report currently, only for function signature
+                        ["CV text placeholder"], # This text is not used
+                        selected_report['raw_data'], # Use the raw_data dictionary for docx generation
+                        selected_report['raw_data'].get('candidate_evaluations', []),
+                        selected_report['raw_data'].get('criteria_comparison_data', {}),
+                        selected_report['raw_data'].get('general_and_shortlist_data', {})
+                    )
+                    st.download_button(
+                        label="Download Re-generated Report",
+                        data=report_buffer_regen.getvalue(),
+                        file_name=f"{selected_report['generated_by_username']}_{selected_report['jd_filename'].replace('.pdf', '').replace('.docx', '')}_Analysis_{selected_report['timestamp'].replace(' ', '_').replace(':', '-')}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key=f"download_regen_button_{selected_report_id}"
+                    )
+                    st.success("Report re-generated and ready for download.")
+            
+            if st.session_state['is_admin']:
+                if st.button("Delete Report (Admin Only)", key=f"delete_report_{selected_report_id}"):
+                    try:
+                        # Delete from Firestore
+                        db.collection('reports').document(selected_report_id).delete()
+                        # Optionally: Delete from Google Drive too if drive_file_id exists
+                        if selected_report['drive_file_id']:
+                            try:
+                                drive_service.files().delete(fileId=selected_report['drive_file_id']).execute()
+                                st.success("Report deleted from Google Drive.")
+                            except Exception as e:
+                                st.warning(f"Could not delete file from Google Drive: {e}. It might have been moved or already deleted.")
+                        st.success("Report deleted successfully from database.")
+                        st.rerun() # Refresh the page to show updated list
+                    except Exception as e:
+                        st.error(f"Error deleting report: {e}")
+
+    except Exception as e:
+        st.error(f"Error fetching reports: {e}")
+
+def manage_users_page():
+    if not st.session_state['is_admin']:
+        st.error("Access Denied: You must be an admin to manage users.")
+        return
+
+    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>SSO Consultants AI Recruitment Tool</h1>", unsafe_allow_html=True)
+    st.subheader("Manage Users")
+
+    st.write("Here you can view, activate/deactivate, and delete user accounts.")
+
+    users_ref = db.collection('users')
+    try:
+        users_docs = users_ref.stream()
+        users = []
+        for doc in users_docs:
+            user_data = doc.to_dict()
+            users.append({
+                'uid': doc.id,
+                'email': user_data.get('email', 'N/A'),
+                'username': user_data.get('username', 'Not Set'),
+                'is_admin': user_data.get('is_admin', False),
+                'disabled': auth.get_user(doc.id).disabled # Get disabled status from Firebase Auth
+            })
+        
+        st.dataframe(
+            users,
+            column_order=["email", "username", "is_admin", "disabled", "uid"],
+            hide_index=True,
+            column_config={
+                "uid": None, # Hide UID in table
+                "email": "Email",
+                "username": "Display Name",
+                "is_admin": "Admin",
+                "disabled": "Disabled"
+            },
+            use_container_width=True
+        )
+
+        st.markdown("---")
+        st.subheader("Actions on Users")
+
+        selected_user_email = st.selectbox("Select a user:", options=[u['email'] for u in users if u['email'] != st.session_state['user_email']], key="user_selector")
+        
+        if selected_user_email:
+            selected_user = next((u for u in users if u['email'] == selected_user_email), None)
+            
+            if selected_user:
+                st.write(f"**Selected User:** {selected_user['username']} ({selected_user['email']})")
+                st.write(f"Admin: {selected_user['is_admin']}, Disabled: {selected_user['disabled']}")
+
+                if st.button(f"Toggle Admin Status ({'Revoke' if selected_user['is_admin'] else 'Grant'})", key=f"toggle_admin_{selected_user['uid']}"):
+                    try:
+                        new_admin_status = not selected_user['is_admin']
+                        db.collection('users').document(selected_user['uid']).update({'is_admin': new_admin_status})
+                        st.success(f"Admin status for {selected_user_email} changed to {new_admin_status}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error toggling admin status: {e}")
+                
+                if st.button(f"Toggle Account Status ({'Enable' if selected_user['disabled'] else 'Disable'})", key=f"toggle_disabled_{selected_user['uid']}"):
+                    try:
+                        new_disabled_status = not selected_user['disabled']
+                        auth.update_user(selected_user['uid'], disabled=new_disabled_status)
+                        st.success(f"Account status for {selected_user_email} changed to {'disabled' if new_disabled_status else 'enabled'}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error toggling account status: {e}")
+
+                if st.button("Delete User", key=f"delete_user_{selected_user['uid']}"):
+                    if st.warning(f"Are you sure you want to delete {selected_user_email}? This cannot be undone."):
+                        if st.button("Confirm Delete", key=f"confirm_delete_{selected_user['uid']}"):
+                            try:
+                                # Delete from Firebase Auth
+                                auth.delete_user(selected_user['uid'])
+                                # Delete from Firestore
+                                db.collection('users').document(selected_user['uid']).delete()
+                                st.success(f"User {selected_user_email} deleted successfully.")
+                                st.rerun()
+                            except exceptions.FirebaseError as e:
+                                st.error(f"Error deleting user: {e.code}")
+                            except Exception as e:
+                                st.error(f"An unexpected error occurred: {e}")
+            else:
+                st.info("Select a user from the dropdown to manage.")
+
+    except Exception as e:
+        st.error(f"Error fetching users: {e}")
 
 # --- Main Application Logic ---
-def main():
-    # Fixed top-left logo (outside the main content flow)
-    try:
-        with open("sso_logo.png", "rb") as f:
-            logo_base64 = base64.b64encode(f.read()).decode()
-        st.markdown(f'<img src="data:image/png;base64,{logo_base64}" class="fixed-top-left-logo">', unsafe_allow_html=True)
-    except FileNotFoundError:
-        st.warning("`sso_logo.png` not found for the fixed top-left logo. Please ensure it's in the root directory.")
-    except Exception as e:
-        st.error(f"Error loading fixed top-left logo: {e}")
+# --- Fixed Position Logo ---
+st.markdown(
+    """
+    <img src="data:image/png;base64,{}" class="fixed-top-left-logo">
+    """.format(base64.b64encode(open("sso_logo.png", "rb").read()).decode()),
+    unsafe_allow_html=True
+)
 
 
-    if not st.session_state['logged_in']:
-        if st.session_state['login_mode'] == 'choose_role':
-            choose_login_type_page()
-        elif st.session_state['login_mode'] == 'login_form':
-            display_login_page()
-    else:
-        # Handle username and password setup first if needed (for ALL new users)
-        if st.session_state.get('needs_username_setup'): 
-            st.header("Setup Your Account (First-Time Login)")
-            st.warning("As this is your first login, please set a new display name and password for security.", icon="🔒")
-            with st.form("set_account_details_form"):
-                new_username = st.text_input("Enter your desired display name (e.g., Alex Smith)", key="new_username_input_setup")
-                new_password = st.text_input("Set New Password", type="password", key="new_password_input_setup")
-                confirm_password = st.text_input("Confirm New Password", type="password", key="confirm_password_input_setup")
-                
-                submit_setup_button = st.form_submit_button("Save Account Details and Re-Login")
-
-                if submit_setup_button:
-                    if not new_username:
-                        st.warning("Please enter a display name.")
-                    elif not new_password:
-                        st.warning("Please set a new password.")
-                    elif new_password != confirm_password:
-                        st.error("Passwords do not match. Please re-enter.")
-                    else:
-                        try:
-                            # 1. Update Firebase Authentication password
-                            auth.update_user(st.session_state['user_uid'], password=new_password)
-                            
-                            # 2. Update Firestore for username and flags
-                            user_doc_ref = db.collection('users').document(st.session_state['user_uid'])
-                            user_doc_ref.update({
-                                'username': new_username,
-                                'has_set_username': True,
-                                'hashed_password': hash_password(new_password) # IMPORTANT: Update hashed_password in Firestore for local emulator login validation
-                            })
-                            
-                            st.session_state['username'] = new_username
-                            st.session_state['has_set_username'] = True
-                            st.session_state['needs_username_setup'] = False # This flag is now done
-
-                            st.success(f"Account details updated successfully! Please log in with your new password.")
-                            logout_user() # Log out to force re-login with new password
-                            
-                        except exceptions.FirebaseError as e:
-                            st.error(f"Error updating account in Firebase: {e}")
-                            st.info("Please ensure your Firebase setup is correct.")
-                        except Exception as e:
-                            st.error(f"An unexpected error occurred during account setup: {e}")
-            return # Stop execution here until account details are set and user logs out
-        
-        # --- Sidebar Navigation for Logged-in Users ---
-        with st.sidebar:
-            st.image("sso_logo.png", use_container_width=True) 
-            st.subheader(f"Welcome, {st.session_state['username'] if st.session_state['username'] else st.session_state['user_email']}!")
-            st.write(f"Role: {'Admin' if st.session_state['is_admin'] else 'User'}")
-            st.write("---")
-
-            if st.session_state['is_admin']:
-                st.write("### Admin Navigation")
-                if st.button("Generate Report", key="nav_generate_admin"):
-                    st.session_state['current_admin_page'] = 'generate'
-                    st.rerun()
-                if st.button("All Reports", key="nav_all_reports_admin"):
-                    st.session_state['current_admin_page'] = 'reports'
-                    st.rerun()
-                if st.button("Manage Users", key="nav_manage_users_admin"):
-                    st.session_state['current_admin_page'] = 'manage_users'
-                    st.rerun()
-            else:
-                st.write("### User Navigation")
-                if st.button("Generate Report", key="nav_generate_user"):
-                    st.session_state['current_admin_page'] = 'generate'
-                    st.rerun()
-                if st.button("All Reports", key="nav_all_reports_user"):
-                    st.session_state['current_admin_page'] = 'reports'
-                    st.rerun()
-            st.write("---")
-            if st.button("Logout", key="logout_button"):
-                logout_user()
-
-        # --- Main Content Area ---
+if not st.session_state['logged_in']:
+    if st.session_state['login_mode'] == 'choose_role':
+        display_login_form()
+    elif st.session_state['login_mode'] == 'login_form':
+        show_login_and_create_account_forms()
+elif st.session_state['needs_username_setup']:
+    setup_username_and_password_page()
+else:
+    # Sidebar for navigation
+    with st.sidebar:
+        st.image("sso_logo.png", use_column_width=True)
+        st.markdown(f"**Welcome, {st.session_state.get('username', st.session_state['user_email'])}!**")
         if st.session_state['is_admin']:
-            if st.session_state['current_admin_page'] == 'generate':
-                generate_comparative_report_page()
-            elif st.session_state['current_admin_page'] == 'reports':
-                show_all_reports_page()
-            elif st.session_state['current_admin_page'] == 'manage_users':
-                manage_users_page()
+            st.markdown("**(Admin User)**")
+        st.write("---")
+
+        if st.session_state['is_admin']:
+            if st.button("Generate Report", key="nav_generate_admin"):
+                st.session_state['current_admin_page'] = 'generate'
+                st.rerun()
+            if st.button("View All Reports", key="nav_reports_admin"):
+                st.session_state['current_admin_page'] = 'reports'
+                st.rerun()
+            if st.button("Manage Users", key="nav_manage_users_admin"):
+                st.session_state['current_admin_page'] = 'manage_users'
+                st.rerun()
         else: # Regular user view
-            if st.session_state['current_admin_page'] == 'generate':
-                generate_comparative_report_page()
-            elif st.session_state['current_admin_page'] == 'reports':
-                show_all_reports_page()
+            if st.button("Generate Report", key="nav_generate_user"):
+                st.session_state['current_admin_page'] = 'generate'
+                st.rerun()
+            if st.button("View My Reports", key="nav_reports_user"):
+                st.session_state['current_admin_page'] = 'reports'
+                st.rerun()
+        
+        st.write("---")
+        if st.button("Logout", key="logout_button"):
+            logout_user()
+
+    # --- Main Content Area ---
+    if st.session_state['is_admin']:
+        if st.session_state['current_admin_page'] == 'generate':
+            generate_comparative_report_page()
+        elif st.session_state['current_admin_page'] == 'reports':
+            show_all_reports_page()
+        elif st.session_state['current_admin_page'] == 'manage_users':
+            manage_users_page()
+    else: # Regular user view
+        if st.session_state['current_admin_page'] == 'generate':
+            generate_comparative_report_page()
+        elif st.session_state['current_admin_page'] == 'reports':
+            show_all_reports_page()
 
 
 # --- Custom FOOTER (Always visible at the bottom of the page) ---
@@ -1234,15 +1233,11 @@ st.markdown(
         padding: 10px;
         background-color: #FFFFFF; /* Match page background */
         font-size: 0.8em;
-        border-top: 1px solid #E0E0E0; /* Subtle border for separation */
-        z-index: 999;
+        border-top: 1px solid #EEEEEE; /* Light grey border at the top of the footer */
+        z-index: 999; /* Ensure footer is above most content but below fixed logo */
     ">
-        ©copyright SSO Consultants
+        SSO Consultants AI Recruitment Tool © 2025 | All Rights Reserved.
     </div>
     """,
     unsafe_allow_html=True
 )
-
-
-if __name__ == "__main__":
-    main()
