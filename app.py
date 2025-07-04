@@ -228,6 +228,23 @@ st.markdown(
     .left-aligned-content [data-testid="stFileUploader"] button {
         align-self: flex-start; /* Align the button element itself to the left */
     }
+
+    /* --- Fix for Streamlit selectbox dropdown height and text wrapping --- */
+    /* Target the popover containing the selectbox options */
+    div[data-baseweb="select-popover"] {
+        max-height: 300px; /* Set a maximum height for the dropdown */
+        overflow-y: auto; /* Enable vertical scrolling if content exceeds max-height */
+    }
+
+    /* Ensure text in selectbox options wraps and height adjusts */
+    div[data-baseweb="select-popover"] div[role="option"] {
+        white-space: normal !important; /* Allow text to wrap within each option */
+        height: auto !important; /* Ensure height adjusts to content */
+        min-height: 38px; /* Set a minimum height for readability if content is short */
+        display: flex; /* Use flex to align content if needed */
+        align-items: center; /* Center vertically if single line */
+        padding: 8px 12px; /* Add some padding for better appearance */
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -1011,7 +1028,13 @@ def show_all_reports_page():
         st.subheader("Actions on Reports")
         
         # Allow users to select a report from the displayed list
-        selected_report_id = st.selectbox("Select a report to view/download:", options=[r['id'] for r in reports], format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}", key="report_selector")
+        # Using a safer lambda for format_func, checking if index exists
+        selected_report_id = st.selectbox(
+            "Select a report to view/download:",
+            options=[r['id'] for r in reports],
+            format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}" if x in [r['id'] for r in reports] else x,
+            key="report_selector"
+        )
         
         selected_report = next((r for r in reports if r['id'] == selected_report_id), None)
 
