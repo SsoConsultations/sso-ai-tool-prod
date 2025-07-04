@@ -1037,10 +1037,11 @@ def manage_users_page():
             "Admin": "Yes" if user.get('is_admin') else "No",
             "Created At": user.get('created_at').strftime('%Y-%m-%d %H:%M') if user.get('created_at') else 'N/A'
         })
-    
+
     if users_data:
-        users_df = pd.DataFrame(users_data, use_container_width=True)
-        st.dataframe(users_df)
+        # CORRECTED LINE: Create DataFrame first, then pass it to st.dataframe()
+        users_df = pd.DataFrame(users_data)
+        st.dataframe(users_df, use_container_width=True) # Apply use_container_width here
     else:
         st.info("No users found.")
 
@@ -1049,7 +1050,7 @@ def manage_users_page():
         new_user_email = st.text_input("New User Email")
         new_user_password = st.text_input("Initial Password for New User", type="password")
         is_new_user_admin = st.checkbox("Grant Admin Privileges to New User?")
-        
+
         proceed_with_creation = True
         if is_new_user_admin:
             st.warning("You are about to grant this user administrator privileges. This will give them full access to manage users, generate reports, and view all data. Please confirm this action.", icon="⚠️")
