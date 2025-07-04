@@ -288,6 +288,12 @@ if 'login_success' not in st.session_state:
 if 'current_admin_page' not in st.session_state:
     st.session_state['current_admin_page'] = 'reports'
 
+# NEW: Session states for report preview
+if 'report_data' not in st.session_state:
+    st.session_state['report_data'] = None
+if 'report_preview_ready' not in st.session_state:
+    st.session_state['report_preview_ready'] = False
+
 
 # --- Firebase Initialization ---
 # Ensure only one app instance is initialized
@@ -488,7 +494,7 @@ def create_user(email, password, is_admin=False):
         return None
 
 def logout_user():
-    for key in ['logged_in', 'user_email', 'user_uid', 'is_admin', 'username', 'has_set_username', 'needs_username_setup', 'login_success', 'current_admin_page', 'login_mode', 'is_admin_attempt']:
+    for key in ['logged_in', 'user_email', 'user_uid', 'is_admin', 'username', 'has_set_username', 'needs_username_setup', 'login_success', 'current_admin_page', 'login_mode', 'is_admin_attempt', 'report_data', 'report_preview_ready']:
         if key in st.session_state:
             del st.session_state[key]
     st.session_state['login_mode'] = 'choose_role' # Reset to role selection on logout
@@ -863,11 +869,13 @@ def generate_comparative_report_page():
         
         if not selected_criteria:
             st.warning("Please select at least one criterion for comparison.")
+            # Clear preview if no criteria are selected after having a preview
+            st.session_state['report_preview_ready'] = False
             return # Prevent generation if no criteria are selected
 
-    if st.button("Generate Report", key="generate_report_button"):
+    if st.button("Generate Report Preview", key="generate_preview_button"): # Changed button text
         if jd_file and cv_files:
-            with st.spinner("Analyzing documents and generating report... This may take a few moments."):
+            with st.spinner("Analyzing documents and preparing preview... This may take a few moments."):
                 jd_text = ""
                 if jd_file.type == "application/pdf":
                     jd_text = get_pdf_text(jd_file)
@@ -875,6 +883,7 @@ def generate_comparative_report_page():
                     jd_text = get_docx_text(jd_file)
                 else:
                     st.error("Unsupported JD file type.")
+                    st.session_state['report_preview_ready'] = False
                     return
 
                 cv_texts = []
@@ -891,31 +900,35 @@ def generate_comparative_report_page():
                 
                 if not cv_texts:
                     st.error("No supported CV files found to analyze.")
+                    st.session_state['report_preview_ready'] = False
                     return
 
                 # Step 1: Get individual candidate evaluations
                 st.info("Step 1/3: Evaluating individual candidates...")
                 candidate_evaluations = get_candidate_evaluation_data(jd_text, cv_texts, cv_filenames)
                 if any("Error: Could not get response from AI." in str(c.values()) for c in candidate_evaluations):
-                    st.error("Failed to get complete candidate evaluations from AI. Report generation aborted.")
+                    st.error("Failed to get complete candidate evaluations from AI. Preview generation aborted.")
+                    st.session_state['report_preview_ready'] = False
                     return
 
                 # Step 2: Get criteria comparison data
                 st.info("Step 2/3: Comparing candidates based on selected criteria...")
                 criteria_comparison_data = get_criteria_comparison_data(jd_text, cv_texts, cv_filenames, selected_criteria)
                 if any("error" in str(criteria_comparison_data.values()) for c in criteria_comparison_data.values()): # Check for errors in inner dicts
-                    st.error("Failed to get criteria comparison from AI. Report generation aborted.")
+                    st.error("Failed to get criteria comparison from AI. Preview generation aborted.")
+                    st.session_state['report_preview_ready'] = False
                     return
 
                 # Step 3: Get general observations and shortlist
                 st.info("Step 3/3: Generating general observations and shortlist...")
                 general_and_shortlist_data = get_general_observations_and_shortlist(candidate_evaluations)
                 if "error" in general_and_shortlist_data.get('GeneralObservations', '').lower():
-                    st.error("Failed to get general observations/shortlist from AI. Report generation aborted.")
+                    st.error("Failed to get general observations/shortlist from AI. Preview generation aborted.")
+                    st.session_state['report_preview_ready'] = False
                     return
 
-                # Prepare report data for DOCX generation and Firestore
-                report_data = {
+                # Store all data in session state for preview and later download
+                st.session_state['report_data'] = {
                     "jd_filename": jd_file.name,
                     "cv_filenames": cv_filenames,
                     "generated_by_email": st.session_state['user_email'],
@@ -925,17 +938,99 @@ def generate_comparative_report_page():
                     "criteria_comparison_data": criteria_comparison_data,
                     "general_and_shortlist_data": general_and_shortlist_data
                 }
+                st.session_state['report_preview_ready'] = True
+                st.success("Report preview ready! Scroll down to view.")
+                st.rerun() # Rerun to display the preview section
+        else:
+            st.error("Please upload both a Job Description and at least one CV to generate a report preview.")
+
+    # --- Report Preview Section (displayed after successful preview generation) ---
+    if st.session_state['report_preview_ready'] and st.session_state['report_data']:
+        report_data = st.session_state['report_data']
+        candidate_evaluations = report_data.get('candidate_evaluations', [])
+        criteria_comparison_data = report_data.get('criteria_comparison_data', {})
+        general_and_shortlist_data = report_data.get('general_and_shortlist_data', {})
+
+        st.markdown("---")
+        st.subheader("📊 Report Preview:")
+
+        st.info("This is a preview of the report content. The final DOCX report will have a structured format based on this data.")
+
+        # Display Candidate Evaluation Table
+        st.markdown("### Candidate Evaluation Table")
+        if candidate_evaluations:
+            # Convert to DataFrame for better display
+            df_eval = pd.DataFrame(candidate_evaluations)
+            # Remove 'OriginalFilename' column as it's internal
+            if 'OriginalFilename' in df_eval.columns:
+                df_eval = df_eval.drop(columns=['OriginalFilename'])
+            
+            # Reorder columns for display
+            display_cols = ["CandidateName", "MatchPercent", "Ranking", "ShortlistProbability", "KeyStrengths", "KeyGaps", "LocationSuitability", "Comments"]
+            # Filter display_cols to only include columns actually present in the dataframe
+            display_cols = [col for col in display_cols if col in df_eval.columns]
+            
+            st.dataframe(df_eval[display_cols], use_container_width=True)
+        else:
+            st.write("No candidate evaluation data to display.")
+
+        # Display Criteria Comparison
+        st.markdown("### Criteria Comparison")
+        if criteria_comparison_data and candidate_evaluations:
+            # Create a DataFrame from the pivoted criteria data
+            # First, extract all candidate names to ensure column order
+            candidate_names_ordered = [cand['CandidateName'] for cand in candidate_evaluations]
+            
+            # Prepare data for DataFrame
+            df_comparison_data = []
+            for criterion, ratings in criteria_comparison_data.items():
+                row = {"Criteria": criterion}
+                for cand_name in candidate_names_ordered:
+                    row[cand_name] = ratings.get(cand_name, 'N/A') # Get rating for each candidate
+                df_comparison_data.append(row)
+            
+            df_comparison = pd.DataFrame(df_comparison_data)
+            st.dataframe(df_comparison, use_container_width=True)
+        else:
+            st.write("No criteria comparison data to display.")
+
+        # Display General Observations
+        st.markdown("### General Observations")
+        st.write(general_and_shortlist_data.get('GeneralObservations', 'No general observations available.'))
+
+        # Display Shortlist Recommendation
+        st.markdown("### Final Shortlist Recommendation")
+        if general_and_shortlist_data.get('ShortlistedCandidates'):
+            st.write(", ".join(general_and_shortlist_data.get('ShortlistedCandidates')))
+        else:
+            st.write("No candidates recommended for shortlist.")
+        
+        st.markdown("---")
+        if st.button("Download & Save Report", key="download_save_report_button"): # New button for final action
+            with st.spinner("Generating DOCX, uploading to Drive, and saving to database..."):
+                # Retrieve all necessary data from session state
+                report_data_to_save = st.session_state['report_data']
+                candidate_evals = report_data_to_save.get('candidate_evaluations', [])
+                criteria_comps = report_data_to_save.get('criteria_comparison_data', {})
+                general_shortlist = report_data_to_save.get('general_and_shortlist_data', {})
 
                 # Generate the DOCX report
+                # Note: jd_text and cv_texts are not passed into create_comparative_docx_report directly anymore,
+                # as the report content is driven by the structured AI outputs.
+                # Placeholders are used as the function signature requires them, but their content is ignored.
                 report_buffer = create_comparative_docx_report(
-                    jd_text, cv_texts, report_data,
-                    candidate_evaluations, criteria_comparison_data, general_and_shortlist_data
+                    "JD Text Placeholder", # Placeholder
+                    ["CV Text Placeholder"], # Placeholder
+                    report_data_to_save,
+                    candidate_evals,
+                    criteria_comps,
+                    general_shortlist
                 )
 
                 # Generate unique filename for the report
-                username = report_data.get('generated_by_username', 'UnknownUser')
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_full_filename = f"{username}_JD_CV_Analysis_Report_{timestamp}.docx" # MODIFIED LINE
+                username = report_data_to_save.get('generated_by_username', 'UnknownUser')
+                timestamp_str = datetime.fromisoformat(report_data_to_save['timestamp']).strftime("%Y%m%d_%H%M%S")
+                report_full_filename = f"{username}_JD_CV_Analysis_Report_{timestamp_str}.docx"
 
                 # Upload to Google Drive
                 try:
@@ -947,32 +1042,39 @@ def generate_comparative_report_page():
                         }
                         media = MediaIoBaseUpload(report_buffer, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', resumable=True)
                         uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                        report_data['drive_file_id'] = uploaded_file.get('id')
+                        report_data_to_save['drive_file_id'] = uploaded_file.get('id')
                         st.success(f"Report uploaded to Google Drive: {report_full_filename}")
                 except Exception as e:
                     st.error(f"Error uploading to Google Drive: {e}. You can still download the report directly.")
-                    report_data['drive_file_id'] = None # Ensure it's marked as failed upload
+                    report_data_to_save['drive_file_id'] = None # Ensure it's marked as failed upload
 
-                # Save report metadata to Firestore
+                # Save report metadata to Firestore (update with drive_file_id)
                 try:
                     reports_collection = db.collection('reports')
-                    reports_collection.add(report_data)
+                    reports_collection.add(report_data_to_save)
                     st.success("Report metadata saved to database.")
                 except Exception as e:
                     st.error(f"Error saving report metadata to database: {e}")
 
-                st.success("Report generated and saved!")
+                st.success("Report finalized, downloaded, and saved!")
 
-                # Provide download link
+                # Provide download link for the generated report
                 st.download_button(
-                    label="Download Report",
-                    data=report_buffer.getvalue(), # Use getvalue() after seeking to 0
+                    label="Download Report DOCX",
+                    data=report_buffer.getvalue(),
                     file_name=report_full_filename,
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    key="download_button"
+                    key="final_download_button"
                 )
-        else:
-            st.error("Please upload both a Job Description and at least one CV to generate a report.")
+                
+                # Reset preview state after download/save
+                st.session_state['report_preview_ready'] = False
+                st.session_state['report_data'] = None # Clear data
+                st.rerun() # Rerun to clear the preview and offer a fresh start
+    elif st.session_state['report_preview_ready'] and not st.session_state['report_data']:
+        st.warning("Report preview was requested, but data is missing. Please try generating the preview again.")
+        st.session_state['report_preview_ready'] = False # Reset state
+    
 
 def show_all_reports_page():
     st.markdown("<h1 style='text-align: center; color: #4CAF50;'>SSO Consultants AI Recruitment Tool</h1>", unsafe_allow_html=True)
@@ -1047,15 +1149,12 @@ def show_all_reports_page():
             # Option to re-generate and download if drive file is missing or for local access
             if st.button("Download as DOCX (Re-generate if needed)", key=f"download_report_{selected_report_id}"):
                 with st.spinner("Re-generating report for download..."):
-                    jd_text_for_regen = "" # You might need to fetch this from a stored JD or re-upload
-                    cv_texts_for_regen = [] # Same here
-                    
-                    # For simplicity, we'll use a placeholder for actual content and rely on saved report_data
-                    # In a real app, you'd retrieve JD/CV content from storage or re-process.
-                    # For now, we'll just reconstruct the DOCX based on the saved report_data
+                    jd_text_for_regen = "Placeholder JD text" # As before, content is not used for DOCX generation logic now
+                    cv_texts_for_regen = ["Placeholder CV text"] # As before
+
                     report_buffer_regen = create_comparative_docx_report(
-                        "Job Description text placeholder", # This text is not used in create_comparative_docx_report currently, only for function signature
-                        ["CV text placeholder"], # This text is not used
+                        jd_text_for_regen, 
+                        cv_texts_for_regen, 
                         selected_report['raw_data'], # Use the raw_data dictionary for docx generation
                         selected_report['raw_data'].get('candidate_evaluations', []),
                         selected_report['raw_data'].get('criteria_comparison_data', {}),
