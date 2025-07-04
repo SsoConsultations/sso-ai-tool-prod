@@ -479,68 +479,263 @@ def get_docx_text(file):
     return text
 
 # --- OpenAI/AI Functions ---
-def get_openai_response(prompt_text):
+def get_openai_response(prompt_text, json_mode=False):
     # Use the globally initialized openai_client
     if openai_client:
         try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4o", # Using a powerful model
-                messages=[
-                    {"role": "system", "content": "You are a helpful AI assistant specialized in analyzing Job Descriptions and CVs. Provide concise, direct, and actionable insights. Be professional and objective."},
-                    {"role": "user", "content": prompt_text}
-                ],
-                temperature=0.7 # Adjust creativity
-            )
-            return response.choices[0].message.content
+            messages = [
+                {"role": "system", "content": "You are a helpful AI assistant specialized in analyzing Job Descriptions and CVs. Provide concise, direct, and actionable insights. Be professional and objective."},
+                {"role": "user", "content": prompt_text}
+            ]
+            
+            if json_mode:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    response_format={ "type": "json_object" }, # Enable JSON mode
+                    temperature=0.7
+                )
+                return json.loads(response.choices[0].message.content) # Parse JSON
+            else:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o", # Using a powerful model
+                    messages=messages,
+                    temperature=0.7 # Adjust creativity
+                )
+                return response.choices[0].message.content
         except Exception as e:
             # Add a print statement to ensure it goes to console logs
             print(f"DEBUG: Caught error in get_openai_response: Type={type(e).__name__}, Message={e}")
-            st.error(f"Error calling OpenAI API: {e}. Please check your API key and network connection.")
-            return "Error: Could not get response from AI."
+            st.error(f"Error calling OpenAI API: {e}. Please check your API key and network connection. If the error persists, try reducing the complexity of the prompt or input files.")
+            return "Error: Could not get response from AI." if not json_mode else {"error": "Could not get response from AI."}
     else:
         st.error("OpenAI client not initialized. Cannot generate AI response.")
-        return "Error: OpenAI client not available."
+        return "Error: OpenAI client not available." if not json_mode else {"error": "OpenAI client not available."}
 
 
-# --- Report Generation Function ---
+# --- NEW AI PROMPT HELPER FUNCTIONS FOR STRUCTURED DATA ---
+
+def get_candidate_evaluation_data(jd_text, cv_texts, cv_filenames):
+    evaluations = []
+    for i, cv_text in enumerate(cv_texts):
+        prompt = f"""
+        Given the following Job Description (JD) and Candidate CV, evaluate the candidate and provide the following details in a JSON object:
+        - CandidateName: Full name of the candidate (deduce from CV).
+        - MatchPercent: An integer percentage (e.g., 75) indicating overall match with the JD.
+        - Ranking: An integer rank (e.g., 1, 2, 3) relative to other candidates, assuming this is the only candidate evaluated right now. Assign rank 1.
+        - ShortlistProbability: "High", "Moderate", or "Low".
+        - KeyStrengths: A concise string listing key strengths of the CV relative to the JD.
+        - KeyGaps: A concise string listing key areas of improvement/gaps in the CV relative to the JD.
+        - LocationSuitability: "Suitable", "Consider", or "Not Suitable" (based on JD's location if specified, and CV's implied location).
+        - Comments: A concise overall comment on the candidate's fit.
+
+        Job Description:
+        {jd_text}
+
+        Candidate CV ({cv_filenames[i]}):
+        {cv_text}
+
+        Ensure the output is a valid JSON object.
+        """
+        response = get_openai_response(prompt, json_mode=True)
+        if isinstance(response, dict) and "error" not in response:
+            # Add filename for internal tracking
+            response['OriginalFilename'] = cv_filenames[i]
+            evaluations.append(response)
+        else:
+            st.warning(f"Could not get structured evaluation for {cv_filenames[i]}: {response.get('error', 'Unknown error')}")
+            evaluations.append({
+                "CandidateName": cv_filenames[i].replace(".pdf", "").replace(".docx", ""),
+                "MatchPercent": 0, "Ranking": 99, "ShortlistProbability": "Low",
+                "KeyStrengths": "AI analysis failed.", "KeyGaps": "AI analysis failed.",
+                "LocationSuitability": "Unknown", "Comments": "Failed to generate AI analysis."
+            })
+    
+    # After getting individual evaluations, re-rank them globally based on MatchPercent
+    if evaluations:
+        evaluations.sort(key=lambda x: x.get('MatchPercent', 0), reverse=True)
+        for rank, eval_data in enumerate(evaluations):
+            eval_data['Ranking'] = rank + 1
+            # Adjust ShortlistProbability based on sorted rank for multi-candidate view
+            if eval_data['MatchPercent'] >= 80:
+                eval_data['ShortlistProbability'] = "High"
+            elif eval_data['MatchPercent'] >= 60:
+                eval_data['ShortlistProbability'] = "Moderate"
+            else:
+                eval_data['ShortlistProbability'] = "Low"
+    
+    return evaluations
+
+
+def get_criteria_comparison_data(jd_text, cv_texts, cv_filenames, criteria_list):
+    # This prompt asks the AI to evaluate each candidate against a fixed set of criteria
+    # and provide a simple emoji-based rating.
+    prompt = f"""
+    Given the Job Description and the following CVs, evaluate each candidate against the provided criteria.
+    For each candidate and each criterion, provide an emoji:
+    - ✅ for strong match/presence
+    - ⚠️ for partial match/some presence/needs consideration
+    - ❌ for no match/significant gap
+
+    Output should be a JSON object where keys are the criteria and values are objects
+    containing candidate names as keys and their emoji ratings as values.
+
+    Job Description:
+    {jd_text}
+
+    Candidate CVs:
+    """
+    for i, cv_text in enumerate(cv_texts):
+        prompt += f"\n--- CV {cv_filenames[i]} ---\n{cv_text}\n"
+
+    prompt += f"\nCriteria to evaluate (use these exact names as keys): {', '.join(criteria_list)}"
+    prompt += "\nExample JSON structure: {'Education (MBA)': {'Candidate1 Name': '✅', 'Candidate2 Name': '⚠️'}, 'Relevant Experience': {'Candidate1 Name': '❌', 'Candidate2 Name': '✅'}}"
+
+    response = get_openai_response(prompt, json_mode=True)
+    if isinstance(response, dict) and "error" not in response:
+        return response
+    else:
+        st.warning(f"Could not get structured criteria comparison: {response.get('error', 'Unknown error')}")
+        return {criterion: {filename.replace('.pdf','').replace('.docx',''): "❌" for filename in cv_filenames} for criterion in criteria_list} # Fallback
+
+
+def get_general_observations_and_shortlist(evaluations):
+    # Sort candidates by ranking to feed into the prompt correctly
+    sorted_candidates = sorted(evaluations, key=lambda x: x.get('Ranking', 99))
+    
+    prompt = "Based on the following candidate evaluations, provide:\n"
+    prompt += "1. General Observations: An overall summary of the candidate pool, highlighting top candidates and general trends.\n"
+    prompt += "2. Final Shortlist Recommendation: A list of names of candidates recommended for shortlisting, based primarily on 'High' or 'Moderate' shortlist probability and ranking.\n\n"
+    prompt += "Candidate Evaluations (sorted by rank):\n"
+    for cand in sorted_candidates:
+        prompt += f"- {cand['CandidateName']} (Match: {cand['MatchPercent']}%, Rank: {cand['Ranking']}, Shortlist: {cand['ShortlistProbability']}): Strengths: {cand['KeyStrengths']}. Gaps: {cand['KeyGaps']}. Comments: {cand['Comments']}\n"
+    
+    prompt += "\nOutput in JSON format with keys 'GeneralObservations' (string) and 'ShortlistedCandidates' (list of strings)."
+
+    response = get_openai_response(prompt, json_mode=True)
+    if isinstance(response, dict) and "error" not in response:
+        return response
+    else:
+        st.warning(f"Could not get general observations and shortlist: {response.get('error', 'Unknown error')}")
+        return {"GeneralObservations": "Could not generate general observations.", "ShortlistedCandidates": []}
+
+
+# --- Report Generation Function (MODIFIED FOR NEW FORMAT) ---
 def create_comparative_docx_report(jd_text, cv_texts, report_data):
     document = Document()
-    document.add_heading(report_data.get('report_title', 'JD-CV Comparative Analysis Report'), level=1)
+    document.add_heading('JD-CV Comparative Analysis Report', level=1)
     
     # Add a paragraph for general info
-    document.add_paragraph(f"Generated by: {report_data.get('generated_by_username', report_data.get('generated_by_email'))}")
+    document.add_paragraph(f"Generated by {report_data.get('generated_by_username', report_data.get('generated_by_email'))}")
     document.add_paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    document.add_paragraph(f"Job Description File: {report_data.get('jd_filename', 'N/A')}")
-    document.add_paragraph(f"CV Files Analyzed: {', '.join(report_data.get('cv_filenames', ['N/A']))}")
+    document.add_paragraph(f"Job Description: {report_data.get('jd_filename', 'N/A')}")
+    document.add_paragraph(f"Candidates: {', '.join(report_data.get('cv_filenames', ['N/A']))}")
 
     document.add_page_break()
 
-    # JD Analysis Section
-    document.add_heading('Job Description Analysis', level=2)
-    jd_analysis_prompt = f"Analyze the following Job Description to identify key requirements, responsibilities, and qualifications. Structure the output clearly with bullet points:\n\nJD:\n{jd_text}"
-    jd_analysis_response = get_openai_response(jd_analysis_prompt)
-    document.add_paragraph(jd_analysis_response)
-    document.add_paragraph('\n')
+    # --- Candidate Evaluation Table ---
+    document.add_heading('🧾 Candidate Evaluation Table', level=2)
+    document.add_paragraph('Detailed assessment of each candidate against the Job Description:')
 
-    # Overall CV Analysis (Concise Summary)
-    document.add_heading('Overall CV Analysis (Summary)', level=2)
-    overall_cv_prompt = f"Given the following Job Description and multiple CVs, provide an overall summary of how well the combined CVs generally align with the JD. Highlight common strengths and weaknesses across the candidates.\n\nJD:\n{jd_text}\n\nCVs:\n{'---CV---\n'.join(cv_texts)}"
-    overall_cv_response = get_openai_response(overall_cv_prompt)
-    document.add_paragraph(overall_cv_response)
-    document.add_paragraph('\n')
+    candidate_evaluations = get_candidate_evaluation_data(jd_text, cv_texts, report_data['cv_filenames'])
+    
+    if candidate_evaluations:
+        headers = ["Candidate Name", "Match %", "Ranking", "Shortlist Probability", "Key Strengths", "Key Gaps", "Location Suitability", "Comments"]
+        table = document.add_table(rows=1, cols=len(headers))
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        for i, header_text in enumerate(headers):
+            hdr_cells[i].text = header_text
+            hdr_cells[i].paragraphs[0].runs[0].font.bold = True
+            hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
-    # Individual CV Comparison Section
-    document.add_heading('Individual CV Comparison', level=2)
-    for i, cv_text in enumerate(cv_texts):
-        cv_filename = report_data['cv_filenames'][i] if i < len(report_data['cv_filenames']) else f"CV {i+1}"
-        document.add_heading(f'{cv_filename} Comparison', level=3)
-        prompt = f"Compare the following CV against the Job Description. Provide:\n1. Key strengths of the CV relative to the JD.\n2. Key areas of improvement/gaps in the CV relative to the JD.\n3. A concise overall fit score (e.g., 1-10 or Poor/Fair/Good/Excellent).\n\nJob Description:\n{jd_text}\n\nCandidate CV:\n{cv_text}"
-        
-        response = get_openai_response(prompt)
-        document.add_paragraph(response)
-        document.add_paragraph('\n')
-        if i < len(cv_texts) - 1:
-            document.add_page_break()
+        for candidate in candidate_evaluations:
+            row_cells = table.add_row().cells
+            row_cells[0].text = candidate.get('CandidateName', 'N/A')
+            row_cells[1].text = f"{candidate.get('MatchPercent', 0)}%"
+            row_cells[2].text = str(candidate.get('Ranking', 'N/A'))
+            row_cells[3].text = candidate.get('ShortlistProbability', 'N/A')
+            row_cells[4].text = candidate.get('KeyStrengths', 'N/A')
+            row_cells[5].text = candidate.get('KeyGaps', 'N/A')
+            row_cells[6].text = candidate.get('LocationSuitability', 'N/A')
+            row_cells[7].text = candidate.get('Comments', 'N/A')
+            
+            for cell in row_cells:
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    else:
+        document.add_paragraph("No candidate evaluation data could be generated.")
+
+    document.add_paragraph('\n')
+    document.add_page_break()
+
+    # --- Additional Observations (Criteria Comparison) ---
+    document.add_heading('✅ Additional Observations (Criteria Comparison)', level=2)
+    document.add_paragraph('Detailed assessment of each candidate against the Job Description:')
+
+    # Define common criteria for comparison based on the example and general BA roles
+    criteria_list = [
+        "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
+        "Location Suitability", "Technical Skills", "Soft Skills"
+    ]
+    criteria_comparison_data = get_criteria_comparison_data(jd_text, cv_texts, report_data['cv_filenames'], criteria_list)
+
+    if criteria_comparison_data:
+        # Prepare header: Criteria + all candidate names
+        table_headers = ["Criteria"] + [cand.get('CandidateName', f"Candidate {i+1}") for i, cand in enumerate(candidate_evaluations)]
+        table = document.add_table(rows=1, cols=len(table_headers))
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        for i, header_text in enumerate(table_headers):
+            hdr_cells[i].text = header_text
+            hdr_cells[i].paragraphs[0].runs[0].font.bold = True
+            hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+        for criterion in criteria_list:
+            row_cells = table.add_row().cells
+            row_cells[0].text = criterion # Criterion name
+            row_cells[0].paragraphs[0].runs[0].font.bold = True
+
+            for i, candidate in enumerate(candidate_evaluations):
+                candidate_name_for_key = candidate.get('CandidateName') # Use the name as returned by AI
+                rating = criteria_comparison_data.get(criterion, {}).get(candidate_name_for_key, '❌') # Default to ❌
+                
+                # Apply color based on emoji/rating
+                cell = row_cells[i + 1]
+                cell.text = rating
+                
+                # Set font color if possible (requires docx.oxml.ns qn)
+                if rating == '✅':
+                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(0x00, 0x80, 0x00) # Green
+                elif rating == '⚠️':
+                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(0xFF, 0xA5, 0x00) # Orange
+                elif rating == '❌':
+                    cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(0xFF, 0x00, 0x00) # Red
+
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    else:
+        document.add_paragraph("No criteria comparison data could be generated.")
+
+    document.add_paragraph('\n')
+    document.add_page_break()
+
+    # --- General Observations and Final Shortlist ---
+    general_and_shortlist_data = get_general_observations_and_shortlist(candidate_evaluations)
+
+    document.add_heading('General Observations', level=2)
+    document.add_paragraph(general_and_shortlist_data.get('GeneralObservations', ''))
+
+    document.add_paragraph('\n')
+    document.add_heading('📌 Final Shortlist Recommendation', level=2)
+    shortlisted = general_and_shortlist_data.get('ShortlistedCandidates', [])
+    if shortlisted:
+        for name in shortlisted:
+            document.add_paragraph(f"• {name}", style='List Bullet')
+    else:
+        document.add_paragraph("No candidates recommended for shortlist based on current criteria.")
 
     # Save to buffer
     docx_buffer = io.BytesIO()
@@ -730,8 +925,8 @@ def manage_users_page():
         })
     
     if users_data:
-        users_df = pd.DataFrame(users_data)
-        st.dataframe(users_df, use_container_width=True)
+        users_df = pd.DataFrame(users_data, use_container_width=True)
+        st.dataframe(users_df)
     else:
         st.info("No users found.")
 
