@@ -959,8 +959,9 @@ def generate_comparative_report_page():
                 )
                 
                 # Generate unique filename for the report
+                username = report_data.get('generated_by_username', 'UnknownUser') # <--- ADD THIS LINE
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_full_filename = f"JD_CV_Analysis_Report_{timestamp}.docx"
+                report_full_filename = f"{username}_JD_CV_Analysis_Report_{timestamp}.docx" # <-
 
                 # --- Display HTML Preview ---
                 display_report_preview_html(candidate_evaluations, criteria_comparison_data, general_and_shortlist_data)
