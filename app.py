@@ -452,7 +452,7 @@ def login_user(email, password): # Removed desired_login_type, as is_admin is fr
             if st.session_state['is_admin']:
                 st.session_state['current_admin_page'] = 'generate' # Admin default to Generate Report
             else:
-                st.session_state['current_admin_page'] = 'reports' # User default to Reports
+                st.session_state['current_admin_page'] = 'generate' # User default to Generate Report (MODIFIED)
 
             st.rerun() # Rerun to update UI after login
         else:
@@ -575,7 +575,7 @@ def get_candidate_evaluation_data(jd_text, cv_texts, cv_filenames):
             evaluations.append(response)
         else:
             st.warning(f"Could not get structured evaluation for {cv_filenames[i]}: {response.get('error', 'Unknown error')}")
-            evaluates.append({
+            evaluations.append({
                 "CandidateName": cv_filenames[i].replace(".pdf", "").replace(".docx", ""),
                 "MatchPercent": 0,
                 "Ranking": 99,
@@ -1072,20 +1072,23 @@ def show_all_reports_page():
             
             if st.session_state['is_admin']:
                 if st.button("Delete Report (Admin Only)", key=f"delete_report_{selected_report_id}"):
-                    try:
-                        # Delete from Firestore
-                        db.collection('reports').document(selected_report_id).delete()
-                        # Optionally: Delete from Google Drive too if drive_file_id exists
-                        if selected_report['drive_file_id']:
+                    # Added a confirmation step for deletion
+                    if st.warning(f"Are you absolutely sure you want to delete {selected_report_id}? This action is irreversible."): # Changed message for clarity
+                        if st.button("Confirm Deletion", key=f"confirm_delete_{selected_report_id}"): # Changed key for clarity
                             try:
-                                drive_service.files().delete(fileId=selected_report['drive_file_id']).execute()
-                                st.success("Report deleted from Google Drive.")
+                                # Delete from Firestore
+                                db.collection('reports').document(selected_report_id).delete()
+                                # Optionally: Delete from Google Drive too if drive_file_id exists
+                                if selected_report['drive_file_id']:
+                                    try:
+                                        drive_service.files().delete(fileId=selected_report['drive_file_id']).execute()
+                                        st.success("Report deleted from Google Drive.")
+                                    except Exception as e:
+                                        st.warning(f"Could not delete file from Google Drive: {e}. It might have been moved or already deleted.")
+                                st.success("Report deleted successfully from database.")
+                                st.rerun() # Refresh the page to show updated list
                             except Exception as e:
-                                st.warning(f"Could not delete file from Google Drive: {e}. It might have been moved or already deleted.")
-                        st.success("Report deleted successfully from database.")
-                        st.rerun() # Refresh the page to show updated list
-                    except Exception as e:
-                        st.error(f"Error deleting report: {e}")
+                                st.error(f"Error deleting report: {e}")
 
     except Exception as e:
         st.error(f"Error fetching reports: {e}")
@@ -1252,13 +1255,11 @@ else:
             if st.button("Manage Users", key="nav_manage_users_admin"):
                 st.session_state['current_admin_page'] = 'manage_users'
                 st.rerun()
-        else: # Regular user view
+        else: # Regular user view (MODIFIED)
             if st.button("Generate Report", key="nav_generate_user"):
                 st.session_state['current_admin_page'] = 'generate'
                 st.rerun()
-            if st.button("View My Reports", key="nav_reports_user"):
-                st.session_state['current_admin_page'] = 'reports'
-                st.rerun()
+            # Removed "View My Reports" button for regular users as per request
         
         st.write("---")
         if st.button("Logout", key="logout_button"):
@@ -1272,11 +1273,9 @@ else:
             show_all_reports_page()
         elif st.session_state['current_admin_page'] == 'manage_users':
             manage_users_page()
-    else: # Regular user view
-        if st.session_state['current_admin_page'] == 'generate':
-            generate_comparative_report_page()
-        elif st.session_state['current_admin_page'] == 'reports':
-            show_all_reports_page()
+    else: # Regular user view (MODIFIED)
+        # Regular users can only access the generate report page
+        generate_comparative_report_page()
 
 
 # --- Custom FOOTER (Always visible at the bottom of the page) ---
