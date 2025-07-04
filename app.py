@@ -757,23 +757,23 @@ def show_login_and_create_account_forms():
         if submitted:
             login_user(email, password)
 
-    st.markdown("<h4 style='text-align: center; color: #4CAF50;'>--- OR ---</h4>", unsafe_allow_html=True)
-
-    with st.form("create_account_form"):
-        st.markdown("<p style='text-align: center;'>Don't have an account? Create one here:</p>", unsafe_allow_html=True)
-        new_email = st.text_input("New Email", key="new_email")
-        new_password = st.text_input("New Password", type="password", key="new_password")
-        confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
-        admin_checkbox = st.checkbox("Create as Admin (requires admin approval)", value=False, key="create_admin_checkbox")
+    # Removed the entire "Create Account" section as per your request
+    # st.markdown("<h4 style='text-align: center; color: #4CAF50;'>--- OR ---</h4>", unsafe_allow_html=True)
+    # with st.form("create_account_form"):
+    #     st.markdown("<p style='text-align: center;'>Don't have an account? Create one here:</p>", unsafe_allow_html=True)
+    #     new_email = st.text_input("New Email", key="new_email")
+    #     new_password = st.text_input("New Password", type="password", key="new_password")
+    #     confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
+    #     admin_checkbox = st.checkbox("Create as Admin (requires admin approval)", value=False, key="create_admin_checkbox")
         
-        new_account_submitted = st.form_submit_button("Create Account")
-        if new_account_submitted:
-            if new_password != confirm_password:
-                st.error("Passwords do not match.")
-            elif len(new_password) < 6:
-                st.error("Password must be at least 6 characters long.")
-            else:
-                create_user(new_email, new_password, admin_checkbox)
+    #     new_account_submitted = st.form_submit_button("Create Account")
+    #     if new_account_submitted:
+    #         if new_password != confirm_password:
+    #             st.error("Passwords do not match.")
+    #         elif len(new_password) < 6:
+    #             st.error("Password must be at least 6 characters long.")
+    #         else:
+    #             create_user(new_email, new_password, admin_checkbox)
 
     if st.button("Back to Role Selection", key="back_to_role_selection_button"):
         st.session_state['login_mode'] = 'choose_role'
