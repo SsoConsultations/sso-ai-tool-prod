@@ -245,6 +245,20 @@ st.markdown(
         align-items: center; /* Center vertically if single line */
         padding: 8px 12px; /* Add some padding for better appearance */
     }
+
+    /* START OF NEW CODE TO FIX SELECTBOX WIDTH */
+    [data-testid="stSelectbox"] > div[data-baseweb="select"] > div[role="button"] {
+        min-width: 450px !important; /* Set a generous minimum width for the display area */
+        max-width: none !important; /* Ensure no max-width is constraining it */
+        width: 100% !important; /* Try to make it take full available width */
+    }
+    /* For the dropdown options themselves to also have enough width */
+    [data-testid="stSelectbox"] > div[data-baseweb="popover"] {
+        min-width: 450px !important; /* Ensure dropdown options also have enough width */
+        max-width: none !important; /* Ensure options are not constrained */
+    }
+    /* END OF NEW CODE TO FIX SELECTBOX WIDTH */
+
     </style>
     """,
     unsafe_allow_html=True
@@ -703,7 +717,7 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_eva
 
         # Add header row for criteria comparison
         hdr_cells = table.rows[0].cells
-        for i, header_text in enumerate(criteria_headers):
+        for i, header_text in enumerate(headers):
             hdr_cells[i].text = header_text
             hdr_cells[i].paragraphs[0].runs[0].font.bold = True
             hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1028,13 +1042,7 @@ def show_all_reports_page():
         st.subheader("Actions on Reports")
         
         # Allow users to select a report from the displayed list
-        # Using a safer lambda for format_func, checking if index exists
-        selected_report_id = st.selectbox(
-            "Select a report to view/download:",
-            options=[r['id'] for r in reports],
-            format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}" if x in [r['id'] for r in reports] else x,
-            key="report_selector"
-        )
+        selected_report_id = st.selectbox("Select a report to view/download:", options=[r['id'] for r in reports], format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}", key="report_selector")
         
         selected_report = next((r for r in reports if r['id'] == selected_report_id), None)
 
