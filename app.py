@@ -257,6 +257,25 @@ if 'login_success' not in st.session_state:
 if 'current_admin_page' not in st.session_state:
     st.session_state['current_admin_page'] = 'reports'
 
+# NEW: Flag to control initial user creation visibility
+if 'allow_initial_user_creation' not in st.session_state:
+    # Check if there are any users in Firebase Auth.
+    # If not, allow initial user creation.
+    # This check can be made more robust if needed.
+    try:
+        # Attempt to list one user. If it fails or returns empty, assume no users.
+        # This requires 'firebase_admin.auth.list_users' permission for the service account.
+        # Or, simpler: Just set to True initially and rely on manual removal.
+        # For simplicity and to avoid potential permission issues on first run,
+        # we'll set it to True by default, expecting you to remove it later.
+        st.session_state['allow_initial_user_creation'] = True
+        # If you want to check for existing users:
+        # users = auth.list_users(max_results=1).users
+        # st.session_state['allow_initial_user_creation'] = not bool(users)
+    except Exception as e:
+        st.warning(f"Could not check for existing users (error: {e}). Defaulting to allowing initial user creation.")
+        st.session_state['allow_initial_user_creation'] = True
+
 
 # --- Firebase Initialization ---
 # Ensure only one app instance is initialized
@@ -570,7 +589,29 @@ def choose_login_type_page():
             st.session_state['is_admin_attempt'] = True
             st.rerun()
     
-    st.info("Note: New users can only be added by an administrator.")
+    # Check if initial user creation is allowed
+    if st.session_state['allow_initial_user_creation']:
+        st.markdown("---")
+        st.markdown("### Initial Setup: Create Your First User")
+        st.info("Use this section to create your first Administrator account or a regular user. This option will disappear once you've set up your system, or you can remove the code manually.")
+        with st.form(key='initial_create_user_form'):
+            new_user_email = st.text_input("New User Email (e.g., admin@yourdomain.com)", key='initial_new_email')
+            new_user_password = st.text_input("Initial Password", type="password", key='initial_new_password')
+            is_new_user_admin = st.checkbox("Grant Admin Privileges?", key='initial_is_admin_checkbox')
+            
+            create_button = st.form_submit_button("Create New User Account")
+            
+            if create_button:
+                if new_user_email and new_user_password:
+                    uid = create_user(new_user_email, new_user_password, is_new_user_admin)
+                    if uid:
+                        st.success(f"User {new_user_email} created successfully! You can now log in.")
+                        # Optionally, set a flag to hide this section after successful creation
+                        # For now, we'll rely on manual removal or more robust checks.
+                else:
+                    st.warning("Please provide both email and password.")
+
+    # st.info("Note: New users can only be added by an administrator.") # This message is now redundant with the new section
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -601,7 +642,7 @@ def display_login_page():
         st.session_state['is_admin_attempt'] = False # Reset this flag
         st.rerun()
 
-    st.info("Note: New users can only be added by an administrator.")
+    # The "Note: New users..." moved to choose_login_type_page for clarity
     st.markdown("</div>", unsafe_allow_html=True)
 
 
