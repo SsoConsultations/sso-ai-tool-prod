@@ -16,7 +16,7 @@ from firebase_admin import exceptions # Import exceptions module for FirebaseErr
 # --- Google Drive Imports ---
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapapi.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload
 
 # --- AI & Document Processing Imports ---
 from openai import OpenAI
