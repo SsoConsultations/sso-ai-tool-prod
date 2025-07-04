@@ -1011,7 +1011,7 @@ def show_all_reports_page():
         st.subheader("Actions on Reports")
         
         # Allow users to select a report from the displayed list
-        selected_report_id = st.selectbox("Select a report to view/download:", options=[r['id'] for r in reports], format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}", key="report_selector")
+        selected_report_id = st.selectbox("Select a report to view/download:", options=[r['id'] for r in reports], format_func=lambda x: f"Report {reports[[r['id'] for r in reports].index(x)]['timestamp']} - {reports[[r['id'] for r in reports].index(x)]['jd_filename']}", key="report_selector", use_container_width=True)
         
         selected_report = next((r for r in reports if r['id'] == selected_report_id), None)
 
