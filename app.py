@@ -16,7 +16,7 @@ from firebase_admin import exceptions # Import exceptions module for FirebaseErr
 # --- Google Drive Imports ---
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapapi.http import MediaIoBaseUpload
 
 # --- AI & Document Processing Imports ---
 from openai import OpenAI
@@ -621,7 +621,7 @@ def get_general_observations_and_shortlist(evaluations):
 
 
 # --- Report Generation Function (MODIFIED FOR NEW FORMAT) ---
-def create_comparative_docx_report(jd_text, cv_texts, report_data):
+def create_comparative_docx_report(jd_text, cv_texts, report_data, candidate_evaluations, criteria_comparison_data, general_and_shortlist_data):
     document = Document()
     document.add_heading('JD-CV Comparative Analysis Report', level=1)
     
@@ -637,8 +637,6 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data):
     document.add_heading('🧾 Candidate Evaluation Table', level=2)
     document.add_paragraph('Detailed assessment of each candidate against the Job Description:')
 
-    candidate_evaluations = get_candidate_evaluation_data(jd_text, cv_texts, report_data['cv_filenames'])
-    
     if candidate_evaluations:
         headers = ["Candidate Name", "Match %", "Ranking", "Shortlist Probability", "Key Strengths", "Key Gaps", "Location Suitability", "Comments"]
         table = document.add_table(rows=1, cols=len(headers))
@@ -679,7 +677,6 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data):
         "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
         "Location Suitability", "Technical Skills", "Soft Skills"
     ]
-    criteria_comparison_data = get_criteria_comparison_data(jd_text, cv_texts, report_data['cv_filenames'], criteria_list)
 
     if criteria_comparison_data:
         # Prepare header: Criteria + all candidate names
@@ -723,8 +720,6 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data):
     document.add_page_break()
 
     # --- General Observations and Final Shortlist ---
-    general_and_shortlist_data = get_general_observations_and_shortlist(candidate_evaluations)
-
     document.add_heading('General Observations', level=2)
     document.add_paragraph(general_and_shortlist_data.get('GeneralObservations', ''))
 
@@ -742,6 +737,108 @@ def create_comparative_docx_report(jd_text, cv_texts, report_data):
     document.save(docx_buffer)
     docx_buffer.seek(0)
     return docx_buffer
+
+# --- NEW: HTML Preview Generation Functions ---
+# Function to generate HTML for the candidate evaluation table
+def generate_candidate_evaluation_html(candidate_evaluations):
+    html = "<h3 style='color:#4CAF50;'>🧾 Candidate Evaluation Table</h3>"
+    html += "<p>Detailed assessment of each candidate against the Job Description:</p>"
+    if not candidate_evaluations:
+        html += "<p>No candidate evaluation data could be generated for preview.</p>"
+        return html
+
+    html += "<table style='width:100%; border-collapse: collapse; border: 1px solid #ddd;'>"
+    html += "<tr style='background-color:#f2f2f2;'>"
+    headers = ["Candidate Name", "Match %", "Ranking", "Shortlist Probability", "Key Strengths", "Key Gaps", "Location Suitability", "Comments"]
+    for header in headers:
+        html += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #4CAF50; color: white;'>{header}</th>"
+    html += "</tr>"
+
+    for candidate in candidate_evaluations:
+        html += "<tr>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('CandidateName', 'N/A')}</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('MatchPercent', 0)}%</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('Ranking', 'N/A')}</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('ShortlistProbability', 'N/A')}</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('KeyStrengths', 'N/A')}</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('KeyGaps', 'N/A')}</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center;'>{candidate.get('LocationSuitability', 'N/A')}</td>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px;'>{candidate.get('Comments', 'N/A')}</td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+# Function to generate HTML for the criteria comparison table
+def generate_criteria_comparison_html(criteria_comparison_data, criteria_list, candidate_evaluations):
+    html = "<h3 style='color:#4CAF50;'>✅ Additional Observations (Criteria Comparison)</h3>"
+    html += "<p>Detailed assessment of each candidate against key criteria:</p>"
+    if not criteria_comparison_data:
+        html += "<p>No criteria comparison data could be generated for preview.</p>"
+        return html
+
+    html += "<table style='width:100%; border-collapse: collapse; border: 1px solid #ddd;'>"
+    html += "<tr style='background-color:#f2f2f2;'>"
+    html += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #4CAF50; color: white;'>Criteria</th>"
+    for candidate in candidate_evaluations:
+        html += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #4CAF50; color: white;'>{candidate.get('CandidateName', 'N/A')}</th>"
+    html += "</tr>"
+
+    for criterion in criteria_list:
+        html += "<tr>"
+        html += f"<td style='border: 1px solid #ddd; padding: 8px; font-weight: bold;'>{criterion}</td>"
+        for candidate in candidate_evaluations:
+            candidate_name_for_key = candidate.get('CandidateName')
+            rating = criteria_comparison_data.get(criterion, {}).get(candidate_name_for_key, '❌')
+            color = 'black'
+            if rating == '✅':
+                color = 'green'
+            elif rating == '⚠️':
+                color = 'orange'
+            elif rating == '❌':
+                color = 'red'
+            html += f"<td style='border: 1px solid #ddd; padding: 8px; text-align: center; color: {color};'>{rating}</td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+# Function to generate HTML for general observations and shortlist
+def generate_general_observations_html(general_and_shortlist_data):
+    html = "<h3 style='color:#4CAF50;'>General Observations</h3>"
+    html += f"<p>{general_and_shortlist_data.get('GeneralObservations', 'No general observations could be generated.')}</p>"
+    
+    html += "<h3 style='color:#4CAF50;'>📌 Final Shortlist Recommendation</h3>"
+    shortlisted = general_and_shortlist_data.get('ShortlistedCandidates', [])
+    if shortlisted:
+        html += "<ul>"
+        for name in shortlisted:
+            html += f"<li>{name}</li>"
+        html += "</ul>"
+    else:
+        html += "<p>No candidates recommended for shortlist based on current criteria.</p>"
+    return html
+
+# The main function to display the entire report preview
+def display_report_preview_html(candidate_evaluations, criteria_comparison_data, general_and_shortlist_data):
+    st.markdown("---")
+    st.subheader("Report Preview (HTML)")
+    st.info("This preview shows the content of the report. The final downloaded DOCX will have specific formatting.", icon="✨")
+
+    # Display candidate evaluation
+    st.markdown(generate_candidate_evaluation_html(candidate_evaluations), unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True) # Spacer
+    
+    # Define criteria list for HTML preview (must match what's used for DOCX/AI)
+    criteria_list_for_html = [
+        "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
+        "Location Suitability", "Technical Skills", "Soft Skills"
+    ]
+    # Display criteria comparison
+    st.markdown(generate_criteria_comparison_html(criteria_comparison_data, criteria_list_for_html, candidate_evaluations), unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True) # Spacer
+
+    # Display general observations and shortlist
+    st.markdown(generate_general_observations_html(general_and_shortlist_data), unsafe_allow_html=True)
+    st.markdown("---")
 
 
 # --- Streamlit Pages/Components ---
@@ -834,6 +931,17 @@ def generate_comparative_report_page():
                     st.error("Could not extract text from any CVs. Please ensure they are valid PDF/DOCX.")
                     return
 
+                # --- Perform all AI analysis first ---
+                # Define criteria list for comparison
+                criteria_list = [
+                    "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
+                    "Location Suitability", "Technical Skills", "Soft Skills"
+                ]
+                
+                candidate_evaluations = get_candidate_evaluation_data(jd_text, cv_texts, [cv.name for cv in cv_files])
+                criteria_comparison_data = get_criteria_comparison_data(jd_text, cv_texts, [cv.name for cv in cv_files], criteria_list)
+                general_and_shortlist_data = get_general_observations_and_shortlist(candidate_evaluations)
+
                 # Prepare report data for both generation and saving
                 report_data = {
                     'report_title': f"Report for {jd_file.name}",
@@ -844,12 +952,18 @@ def generate_comparative_report_page():
                     'cv_filenames': [cv.name for cv in cv_files],
                 }
 
-                docx_buffer = create_comparative_docx_report(jd_text, cv_texts, report_data)
+                # --- Generate DOCX Report ---
+                docx_buffer = create_comparative_docx_report(
+                    jd_text, cv_texts, report_data, 
+                    candidate_evaluations, criteria_comparison_data, general_and_shortlist_data
+                )
                 
                 # Generate unique filename for the report
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 report_full_filename = f"JD_CV_Analysis_Report_{timestamp}.docx"
 
+                # --- Display HTML Preview ---
+                display_report_preview_html(candidate_evaluations, criteria_comparison_data, general_and_shortlist_data)
 
                 # --- Save report to Google Drive and Firestore ---
                 if drive_service and GOOGLE_DRIVE_REPORTS_FOLDER_ID:
