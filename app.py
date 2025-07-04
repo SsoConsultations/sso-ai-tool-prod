@@ -834,7 +834,7 @@ def generate_comparative_report_page():
 
     # Define the list of criteria for comparison
     comparison_criteria = [
-        "Education (MBA)", "Relevant Experience", "SQL Proficiency", "Certifications",
+        "Education ", "Relevant Experience",  "Certifications",
         "Location Suitability", "Technical Skills", "Soft Skills"
     ]
 
