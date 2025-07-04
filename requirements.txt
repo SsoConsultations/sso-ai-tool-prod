@@ -15,5 +15,17 @@ google-auth-oauthlib
 google-auth
 firebase-admin
 pyrebase4
-
+streamlit
+firebase-admin
+PyPDF2
+openai
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+bcrypt
+pandas
+python-docx
+tqdm
+requests
 
