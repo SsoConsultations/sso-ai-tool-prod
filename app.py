@@ -370,7 +370,7 @@ try:
     openai_api_key = st.secrets["OPENAI_API_KEY"]
     # Initialize the OpenAI client with the loaded API key
     openai_client = OpenAI(api_key=openai_api_key)
-    st.success("OpenAI API key loaded successfully!")
+    
 
 except KeyError:
     st.error("OPENAI_API_KEY not found in Streamlit secrets! "
