@@ -74,7 +74,7 @@ st.markdown(
         color: white; /* White text for buttons */
         border-radius: 5px;
         border: none;
-        padding: 10px 20px;
+        padding: 5px 10px;
         font-size: 16px;
         cursor: pointer;
         transition: background-color 0.3s ease;
