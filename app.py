@@ -64,6 +64,10 @@ st.markdown(
     h1, h2, h3, h4, h5, h6 {
         color: #4CAF50; /* Green for headers from config.toml */
     }
+    h1 {
+        margin-top: 0px !important; /* Force no top margin */
+        padding-top: 0px !important; /* Force no top padding */
+    }
     /* Buttons */
     .stButton>button {
         background-color: #4CAF50; /* Green background for buttons from config.toml */
