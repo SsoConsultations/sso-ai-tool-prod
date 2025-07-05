@@ -111,7 +111,7 @@ st.markdown(
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding-top: 50px;
+        padding-top: 20px;
     }
     .main-content-centered .stTextInput, .main-content-centered .stButton {
         max-width: 400px; /* Limit width of input/buttons in centered view */
