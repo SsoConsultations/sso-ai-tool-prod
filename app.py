@@ -347,7 +347,7 @@ try:
 
     # Build the Google Drive API service client
     drive_service = build('drive', 'v3', credentials=drive_credentials)
-    st.success("Google Drive API initialized successfully.")
+    
 
 except KeyError:
     st.error("Google Drive 'GOOGLE_DRIVE_KEY' not found in Streamlit secrets! "
