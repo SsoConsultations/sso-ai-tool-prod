@@ -942,20 +942,22 @@ def generate_comparative_report_page():
                 report_full_filename = f"{username}_JD_CV_Analysis_Report_{timestamp}.docx" # MODIFIED LINE
 
                 # Upload to Google Drive
-                try:
-                    if drive_service and GOOGLE_DRIVE_REPORTS_FOLDER_ID:
-                        file_metadata = {
-                            'name': report_full_filename,
-                            'parents': [GOOGLE_DRIVE_REPORTS_FOLDER_ID],
-                            'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                        }
-                        media = MediaIoBaseUpload(report_buffer, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', resumable=True)
-                        uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                        report_data['drive_file_id'] = uploaded_file.get('id')
-                        st.success(f"Report uploaded to Google Drive: {report_full_filename}")
-                except Exception as e:
-                    st.error(f"Error uploading to Google Drive: {e}. You can still download the report directly.")
-                    report_data['drive_file_id'] = None # Ensure it's marked as failed upload
+                # --- START COMMENTED OUT GOOGLE DRIVE UPLOAD SECTION ---
+                # try:
+                #     if drive_service and GOOGLE_DRIVE_REPORTS_FOLDER_ID:
+                #         file_metadata = {
+                #             'name': report_full_filename,
+                #             'parents': [GOOGLE_DRIVE_REPORTS_FOLDER_ID],
+                #             'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                #         }
+                #         media = MediaIoBaseUpload(report_buffer, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', resumable=True)
+                #         uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                #         report_data['drive_file_id'] = uploaded_file.get('id')
+                #         st.success(f"Report uploaded to Google Drive: {report_full_filename}")
+                # except Exception as e:
+                #     st.error(f"Error uploading to Google Drive: {e}. You can still download the report directly.")
+                #     report_data['drive_file_id'] = None # Ensure it's marked as failed upload
+                # --- END COMMENTED OUT GOOGLE DRIVE UPLOAD SECTION ---
 
                 # Save report metadata to Firestore
                 try:
@@ -1041,6 +1043,8 @@ def show_all_reports_page():
         selected_report = next((r for r in reports if r['id'] == selected_report_id), None)
 
         if selected_report:
+            # The section below for Google Drive link is still here, but if upload is commented out,
+            # 'drive_file_id' will be None, leading to the warning message.
             if selected_report['drive_file_id']:
                 # Generate a shareable link from Google Drive file ID
                 drive_link = f"https://drive.google.com/file/d/{selected_report['drive_file_id']}/view?usp=sharing"
@@ -1083,12 +1087,14 @@ def show_all_reports_page():
                                 # Delete from Firestore
                                 db.collection('reports').document(selected_report_id).delete()
                                 # Optionally: Delete from Google Drive too if drive_file_id exists
-                                if selected_report['drive_file_id']:
-                                    try:
-                                        drive_service.files().delete(fileId=selected_report['drive_file_id']).execute()
-                                        st.success("Report deleted from Google Drive.")
-                                    except Exception as e:
-                                        st.warning(f"Could not delete file from Google Drive: {e}. It might have been moved or already deleted.")
+                                # --- START COMMENTED OUT GOOGLE DRIVE DELETE SECTION ---
+                                # if selected_report['drive_file_id']:
+                                #     try:
+                                #         drive_service.files().delete(fileId=selected_report['drive_file_id']).execute()
+                                #         st.success("Report deleted from Google Drive.")
+                                #     except Exception as e:
+                                #         st.warning(f"Could not delete file from Google Drive: {e}. It might have been moved or already deleted.")
+                                # --- END COMMENTED OUT GOOGLE DRIVE DELETE SECTION ---
                                 st.success("Report deleted successfully from database.")
                                 st.rerun() # Refresh the page to show updated list
                             except Exception as e:
